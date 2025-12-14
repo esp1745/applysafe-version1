@@ -80,19 +80,28 @@ function setupEventListeners() {
   elements.openSettings.addEventListener('click', openSettings);
 }
 
-// Load statistics from storage
+// Load statistics from storage (now using database)
 async function loadStats() {
   try {
-    const result = await chrome.storage.local.get(['stats']);
-    const stats = result.stats || { scamsBlocked: 0, jobsScanned: 0 };
+    // Get real-time stats from database
+    const response = await chrome.runtime.sendMessage({ action: 'getStats' });
     
-    elements.scamsBlocked.textContent = stats.scamsBlocked;
-    elements.jobsScanned.textContent = stats.jobsScanned;
-    
-    // Calculate safety rate
-    if (stats.jobsScanned > 0) {
-      const safetyRate = Math.round(((stats.jobsScanned - stats.scamsBlocked) / stats.jobsScanned) * 100);
-      elements.safetyScore.textContent = `${safetyRate}%`;
+    if (response && response.stats) {
+      const stats = response.stats;
+      elements.scamsBlocked.textContent = stats.scamsCaught;
+      elements.jobsScanned.textContent = stats.totalJobs;
+      
+      // Calculate safety rate
+      if (stats.totalJobs > 0) {
+        const safetyRate = Math.round(((stats.totalJobs - stats.scamsCaught) / stats.totalJobs) * 100);
+        elements.safetyScore.textContent = `${safetyRate}%`;
+      }
+    } else {
+      // Fallback to old storage method
+      const result = await chrome.storage.local.get(['stats']);
+      const oldStats = result.stats || { scamsBlocked: 0, jobsScanned: 0 };
+      elements.scamsBlocked.textContent = oldStats.scamsBlocked;
+      elements.jobsScanned.textContent = oldStats.jobsScanned;
     }
   } catch (error) {
     console.error('Error loading stats:', error);

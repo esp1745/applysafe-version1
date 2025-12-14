@@ -143,16 +143,12 @@
     for (const site of Object.keys(SITE_SELECTORS)) {
       if (hostname.includes(site)) {
         selectors = { ...SITE_SELECTORS.default, ...SITE_SELECTORS[site] };
-        console.log('ApplySafe: Using selectors for site:', site);
-        console.log('ApplySafe: Company selector:', selectors.company);
-        console.log('ApplySafe: Description selector:', selectors.description);
         break;
       }
     }
     
     // Extract data using selectors
     let company = extractText(selectors.company);
-    console.log('ApplySafe: Raw company extracted:', company);
     
     // Clean company name (remove ratings, extra whitespace, etc.)
     if (company) {

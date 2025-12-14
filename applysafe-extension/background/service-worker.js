@@ -3,6 +3,9 @@
  * Handles AI analysis, API calls, and extension coordination
  */
 
+// Import database module
+importScripts('database.js');
+
 // Configuration
 const CONFIG = {
   API_ENDPOINT: 'https://api.anthropic.com/v1/messages',
@@ -95,6 +98,25 @@ async function handleMessage(request, sender) {
         // Can't programmatically open popup, but can open options
         chrome.runtime.openOptionsPage();
         return { success: true };
+        
+      case 'getJobHistory':
+        return { jobs: await getAllJobs(request.limit || 100) };
+        
+      case 'searchJobs':
+        return { jobs: await searchJobs(request.query) };
+        
+      case 'getStats':
+        return { stats: await getStats() };
+        
+      case 'addToWhitelist':
+        await addToWhitelist(request.company, request.reason);
+        return { success: true };
+        
+      case 'checkWhitelist':
+        return { isWhitelisted: await isWhitelisted(request.company) };
+        
+      case 'getJobsByCompany':
+        return { jobs: await getJobsByCompany(request.company) };
         
       default:
         return { error: 'Unknown action' };
@@ -240,6 +262,14 @@ async function analyzeJob(jobData, url, autoAnalysis = false) {
     
     // Cache the result for future use
     await saveCachedAnalysis(url, analysis);
+    
+    // Save to database
+    try {
+      await saveJob(jobData, analysis);
+      console.log('ApplySafe: Job saved to database');
+    } catch (dbError) {
+      console.error('ApplySafe: Database save failed:', dbError);
+    }
     
     // Show notification for high-risk jobs
     if (analysis.riskScore > 60 && !autoAnalysis) {
@@ -667,11 +697,35 @@ async function verifyCompany(companyName, companyWebsite, jobTitle) {
       }
     }
     
-    // Check H1B sponsorship
+    // Check H1B sponsorship (with caching)
     if (companyName) {
       console.log(`Starting H1B check for: ${companyName}`);
-      verification.h1bSponsorship = await checkH1BSponsorship(companyName);
-      console.log('H1B check result:', verification.h1bSponsorship);
+      
+      // Try to get from cache first
+      try {
+        const cached = await getCachedH1B(companyName);
+        if (cached) {
+          console.log('H1B data loaded from cache:', cached);
+          verification.h1bSponsorship = {
+            sponsors: cached.h1bSponsors,
+            totalApplications: cached.totalApplications,
+            note: cached.note
+          };
+        } else {
+          // Fetch fresh data and cache it
+          verification.h1bSponsorship = await checkH1BSponsorship(companyName);
+          console.log('H1B check result:', verification.h1bSponsorship);
+          
+          if (verification.h1bSponsorship) {
+            await cacheCompanyH1B(companyName, verification.h1bSponsorship);
+            console.log('H1B data cached for:', companyName);
+          }
+        }
+      } catch (cacheError) {
+        console.error('H1B cache error:', cacheError);
+        // Fallback to direct check
+        verification.h1bSponsorship = await checkH1BSponsorship(companyName);
+      }
     } else {
       console.log('Skipping H1B check - no company name');
     }
