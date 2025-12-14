@@ -2,11 +2,19 @@
 // Handles license validation, free trial, and Stripe integration
 
 const SUBSCRIPTION_CONFIG = {
-  STRIPE_PUBLISHABLE_KEY: 'pk_test_YOUR_STRIPE_KEY', // TODO: Replace with your Stripe publishable key
+  // TEST MODE - Get your keys from https://dashboard.stripe.com/test/apikeys
+  STRIPE_PUBLISHABLE_KEY: 'pk_test_YOUR_PUBLISHABLE_KEY', // Replace with your test publishable key
   TRIAL_DAYS: 7,
   DAILY_SCAN_LIMIT_FREE: 5, // Free trial: 5 scans per day
-  API_ENDPOINT: 'http://localhost:3000/api', // TODO: Replace with deployed backend URL
-  PRICE_ID: 'price_YOUR_STRIPE_PRICE_ID' // TODO: Replace with your Stripe price ID
+  API_ENDPOINT: 'http://localhost:3000/api', // Local testing backend
+  PRICE_ID: 'price_YOUR_PRICE_ID' // Replace with your test price ID
+  
+  // To get test credentials:
+  // 1. Sign up at https://dashboard.stripe.com
+  // 2. Go to Developers > API keys
+  // 3. Toggle "Test mode" ON
+  // 4. Copy "Publishable key" and paste above
+  // 5. Create test product/price and copy Price ID
 };
 
 // Check subscription status
