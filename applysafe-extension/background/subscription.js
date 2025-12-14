@@ -2,12 +2,12 @@
 // Handles license validation, free trial, and Stripe integration
 
 const SUBSCRIPTION_CONFIG = {
-  // TEST MODE - Get your keys from https://dashboard.stripe.com/test/apikeys
-  STRIPE_PUBLISHABLE_KEY: 'pk_test_YOUR_PUBLISHABLE_KEY', // Replace with your test publishable key
+  // TEST MODE - Configured with your Stripe test account
+  STRIPE_PUBLISHABLE_KEY: 'pk_test_51RUCeWRvKQf7z4L6KtiAvtMRYom6zjz81RrqTvTTnV9XMBV8v06JaSLcAZHncPTraoBXxcsgbBMDtSaN4MOfEF17001zcNcgWr',
   TRIAL_DAYS: 7,
-  DAILY_SCAN_LIMIT_FREE: 5, // Free trial: 5 scans per day
+  DAILY_SCAN_LIMIT_FREE: 10, // Free trial: 10 scans per day
   API_ENDPOINT: 'http://localhost:3000/api', // Local testing backend
-  PRICE_ID: 'price_YOUR_PRICE_ID' // Replace with your test price ID
+  PRICE_ID: 'price_1SeNEXRvKQf7z4L6T9GroSYi'
   
   // To get test credentials:
   // 1. Sign up at https://dashboard.stripe.com
@@ -123,30 +123,61 @@ async function getTrialInfo() {
 // Create Stripe checkout session
 async function createCheckoutSession() {
   try {
+    console.log('ApplySafe: Creating checkout session...');
+    console.log('API Endpoint:', SUBSCRIPTION_CONFIG.API_ENDPOINT);
+    console.log('Price ID:', SUBSCRIPTION_CONFIG.PRICE_ID);
+    
     const subscription = await getSubscriptionStatus();
+    
+    const requestBody = {
+      priceId: SUBSCRIPTION_CONFIG.PRICE_ID,
+      customerId: subscription.stripeCustomerId,
+      successUrl: chrome.runtime.getURL('popup/success.html'),
+      cancelUrl: chrome.runtime.getURL('popup/popup.html')
+    };
+    
+    console.log('Request body:', JSON.stringify(requestBody, null, 2));
     
     const response = await fetch(`${SUBSCRIPTION_CONFIG.API_ENDPOINT}/create-checkout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        priceId: SUBSCRIPTION_CONFIG.PRICE_ID,
-        customerId: subscription.stripeCustomerId,
-        successUrl: chrome.runtime.getURL('popup/success.html'),
-        cancelUrl: chrome.runtime.getURL('popup/popup.html')
-      })
+      body: JSON.stringify(requestBody)
     });
     
+    console.log('Response status:', response.status);
+    console.log('Response ok:', response.ok);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Server error response:', errorText);
+      throw new Error(`Server returned ${response.status}: ${errorText}`);
+    }
+    
     const data = await response.json();
+    console.log('Checkout session response:', data);
     
     if (data.url) {
+      console.log('Opening checkout URL:', data.url);
+      console.log('Session ID:', data.sessionId);
+      
+      // Store session info for tracking
+      await chrome.storage.local.set({ 
+        pendingCheckout: {
+          sessionId: data.sessionId,
+          clientReferenceId: data.clientReferenceId,
+          timestamp: Date.now()
+        }
+      });
+      
       // Open Stripe checkout in new tab
       chrome.tabs.create({ url: data.url });
       return { success: true };
     } else {
-      throw new Error('Failed to create checkout session');
+      throw new Error('No checkout URL returned from server');
     }
   } catch (error) {
     console.error('Checkout error:', error);
+    console.error('Error stack:', error.stack);
     return { success: false, error: error.message };
   }
 }
@@ -178,6 +209,37 @@ async function validateLicenseKey(licenseKey) {
     }
   } catch (error) {
     console.error('License validation error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Activate subscription after successful payment
+async function activateSubscription(customerId, sessionId) {
+  try {
+    console.log('Activating subscription for customer:', customerId);
+    const subscription = await getSubscriptionStatus();
+    
+    subscription.status = 'active';
+    subscription.stripeCustomerId = customerId;
+    subscription.stripeSessionId = sessionId;
+    subscription.activatedAt = Date.now();
+    subscription.scansToday = 0; // Reset scan count
+    
+    await chrome.storage.local.set({ subscription });
+    console.log('Subscription activated successfully!');
+    
+    // Show success notification
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+      title: 'ApplySafe Pro Activated!',
+      message: 'You now have unlimited job scans. Thanks for subscribing!',
+      priority: 2
+    });
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Activation error:', error);
     return { success: false, error: error.message };
   }
 }

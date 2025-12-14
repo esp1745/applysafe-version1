@@ -46,6 +46,8 @@
     "https://www.remote.co/*",
     "https://weworkremotely.com/*",
     "https://remoteok.com/*",
+    "https://careers.google.com/*",
+    "https://www.google.com/about/careers/*",
     "https://api.anthropic.com/*",
     "https://h1bdata.info/*"
   ],
@@ -72,7 +74,9 @@
         "https://www.flexjobs.com/job/*",
         "https://www.remote.co/job/*",
         "https://weworkremotely.com/remote-jobs/*",
-        "https://remoteok.com/*"
+        "https://remoteok.com/*",
+        "https://careers.google.com/jobs/*",
+        "https://www.google.com/about/careers/applications/jobs/*"
       ],
       "js": ["content/content.js"],
       "css": ["content/content.css"],
@@ -85,5 +89,8 @@
       "resources": ["icons/*", "assets/*"],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; trusted-types default 'allow-duplicates';"
+  }
 }

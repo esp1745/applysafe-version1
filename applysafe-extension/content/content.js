@@ -16,7 +16,7 @@
   const SITE_SELECTORS = {
     'linkedin.com': {
       title: '.job-details-jobs-unified-top-card__job-title, .jobs-unified-top-card__job-title, .t-24.t-bold',
-      company: '.job-details-jobs-unified-top-card__company-name, .jobs-unified-top-card__company-name, .jobs-unified-top-card__subtitle-primary-grouping a',
+      company: '.job-details-jobs-unified-top-card__company-name, .jobs-unified-top-card__company-name, .jobs-unified-top-card__subtitle-primary-grouping a, .job-details-jobs-unified-top-card__primary-description-without-tagline a, a.app-aware-link[href*="/company/"], .artdeco-entity-lockup__subtitle a',
       description: '.jobs-description__content, .jobs-box__html-content, .jobs-description-content__text',
       salary: '.job-details-jobs-unified-top-card__job-insight, .jobs-unified-top-card__job-insight',
       location: '.job-details-jobs-unified-top-card__bullet, .jobs-unified-top-card__bullet',
@@ -64,6 +64,14 @@
       salary: '[data-cy="compensationText"]',
       location: '[data-cy="locationText"]',
       container: '.job-details-container'
+    },
+    'google.com': {
+      title: 'h1, h2, h3[class*="title"], [role="heading"], [class*="job-title"]',
+      company: '[class*="company"], [class*="employer"], [itemprop="hiringOrganization"]',
+      description: '[class*="description"], [itemprop="description"], [role="article"], section, article, div[class*="content"]',
+      salary: '[class*="salary"], [class*="compensation"], [class*="pay"]',
+      location: '[class*="location"], [itemprop="jobLocation"], [class*="address"]',
+      container: 'main, [role="main"], body'
     },
     'default': {
       title: 'h1, [class*="title"], [class*="Title"]',
@@ -143,8 +151,21 @@
     for (const site of Object.keys(SITE_SELECTORS)) {
       if (hostname.includes(site)) {
         selectors = { ...SITE_SELECTORS.default, ...SITE_SELECTORS[site] };
+        console.log('ApplySafe: Using selectors for:', site);
         break;
       }
+    }
+    
+    // Debug: Log available headings and text on page
+    if (hostname.includes('google.com') || hostname.includes('careers')) {
+      console.log('ApplySafe: Debug - Page structure:');
+      const h1s = document.querySelectorAll('h1');
+      const h2s = document.querySelectorAll('h2');
+      const h3s = document.querySelectorAll('h3');
+      console.log('H1s found:', h1s.length, Array.from(h1s).map(h => h.textContent.trim().substring(0, 50)));
+      console.log('H2s found:', h2s.length, Array.from(h2s).map(h => h.textContent.trim().substring(0, 50)));
+      console.log('H3s found:', h3s.length, Array.from(h3s).map(h => h.textContent.trim().substring(0, 50)));
+      console.log('Page title:', document.title);
     }
     
     // Extract data using selectors
@@ -179,23 +200,69 @@
     data.pageMetadata = extractMetadata();
     data.companyWebsite = extractCompanyWebsite();
     
-    // Fallback: Try to extract company from page title if not found
+    // Fallback 1: Try to extract company from page title if not found
     if (!data.company || data.company.length < 2) {
       const pageTitle = document.title;
+      
+      // Google Careers format: "JobTitle - Google Careers"
+      if (pageTitle.includes('Google')) {
+        data.company = 'Google';
+        console.log('ApplySafe: Company extracted as Google from title');
+      }
       // Glassdoor titles often format as "JobTitle - CompanyName | Glassdoor"
-      const titleMatch = pageTitle.match(/^[^-]+-\s*([^|]+)/);
-      if (titleMatch && titleMatch[1]) {
-        const potentialCompany = titleMatch[1].trim();
-        // Validate it's not just "Glassdoor" or site name
-        if (potentialCompany.length > 2 && !potentialCompany.toLowerCase().includes('glassdoor')) {
-          data.company = potentialCompany;
-          console.log('ApplySafe: Company extracted from page title:', data.company);
+      else {
+        const titleMatch = pageTitle.match(/^[^-]+-\s*([^|]+)/);
+        if (titleMatch && titleMatch[1]) {
+          const potentialCompany = titleMatch[1].trim();
+          // Validate it's not just site name
+          const excludedWords = ['glassdoor', 'indeed', 'linkedin', 'careers', 'jobs'];
+          const isValid = potentialCompany.length > 2 && 
+                         !excludedWords.some(word => potentialCompany.toLowerCase().includes(word));
+          if (isValid) {
+            data.company = potentialCompany;
+            console.log('ApplySafe: Company extracted from page title:', data.company);
+          }
         }
       }
     }
     
+    // Fallback 2: Try to extract from URL hostname
+    if (!data.company || data.company.length < 2) {
+      const hostname = window.location.hostname;
+      // Check if it's a company career site (e.g., careers.microsoft.com)
+      if (hostname.includes('careers.')) {
+        const companyFromUrl = hostname.split('.')[1];
+        if (companyFromUrl && companyFromUrl.length > 2) {
+          data.company = companyFromUrl.charAt(0).toUpperCase() + companyFromUrl.slice(1);
+          console.log('ApplySafe: Company extracted from URL:', data.company);
+        }
+      }
+    }
+    
+    // Fallback 3: If still no title, try to get ANY h1, h2, or h3
+    if (!data.title || data.title.length < 3) {
+      const headings = document.querySelectorAll('h1, h2');
+      for (const heading of headings) {
+        const text = heading.textContent.trim();
+        if (text.length > 5 && text.length < 200) {
+          data.title = text;
+          console.log('ApplySafe: Title extracted from heading fallback:', data.title);
+          break;
+        }
+      }
+    }
+    
+    // Fallback 4: If still no description, get main content
+    if (!data.description || data.description.length < 50) {
+      const mainContent = document.querySelector('main, article, [role="main"]');
+      if (mainContent) {
+        data.description = mainContent.textContent.trim();
+        console.log('ApplySafe: Description extracted from main content, length:', data.description.length);
+      }
+    }
+    
     // Debug logging
-    console.log('ApplySafe: Extracted job data:', {
+    console.log('ApplySafe: Final extracted job data:', {
       title: data.title,
       company: data.company,
       descriptionLength: data.description?.length || 0,
@@ -335,6 +402,13 @@
     console.log('ApplySafe: Message received:', request.action);
     
     switch (request.action) {
+      case 'reprocessPage':
+        // Re-extract job data (for popup opening)
+        console.log('ApplySafe: Reprocess page requested');
+        currentJobData = extractJobData();
+        sendResponse({ success: true });
+        break;
+        
       case 'getJobData':
         // If we don't have job data yet, try to extract it now
         if (!currentJobData) {

@@ -51,6 +51,38 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   }
 });
 
+// Listen for successful payment completion
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  // Check if user landed on success page after payment
+  if (changeInfo.status === 'complete' && tab.url && tab.url.includes('localhost:3000/success')) {
+    console.log('Payment success page detected!');
+    
+    // Extract session_id from URL
+    const urlParams = new URLSearchParams(new URL(tab.url).search);
+    const sessionId = urlParams.get('session_id');
+    
+    if (sessionId) {
+      console.log('Session ID found:', sessionId);
+      
+      // Wait a moment for Stripe to process
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Retrieve session details from backend
+      try {
+        const response = await fetch(`http://localhost:3000/api/get-session?session_id=${sessionId}`);
+        const data = await response.json();
+        
+        if (data.customerId) {
+          console.log('Activating subscription with customer ID:', data.customerId);
+          await activateSubscription(data.customerId, sessionId);
+        }
+      } catch (error) {
+        console.error('Error retrieving session:', error);
+      }
+    }
+  }
+});
+
 // Create context menu (do this on startup, not just on install)
 try {
   chrome.contextMenus.create({
@@ -141,6 +173,9 @@ async function handleMessage(request, sender) {
         await syncSubscriptionStatus();
         return { success: true };
         
+      case 'activateSubscription':
+        return await activateSubscription(request.customerId, request.sessionId);
+        
       default:
         return { error: 'Unknown action' };
     }
@@ -167,15 +202,18 @@ async function analyzeJob(jobData, url, autoAnalysis = false) {
           message: 'Your 7-day trial has ended. Upgrade to Pro for unlimited scans!',
           trialInfo
         };
-      } else {
+      } else if (!trialInfo.isPaid) {
+        // Only show limit error for non-paid users
         showUpgradePrompt('limit_reached');
         return {
           success: false,
           error: 'limit_reached',
-          message: `Daily scan limit reached (${trialInfo.totalScansToday}/${5}). Upgrade to Pro for unlimited scans!`,
+          message: `Daily scan limit reached (${trialInfo.totalScansToday}/10). Upgrade to Pro for unlimited scans!`,
           trialInfo
         };
       }
+      // If paid user and canAnalyze is false, something is wrong - proceed anyway
+      console.log('Warning: Paid user but canAnalyze returned false, proceeding...');
     }
     
     // Get API key first to check if we should use cache

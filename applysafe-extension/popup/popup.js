@@ -227,6 +227,16 @@ async function analyzeCurrentPage() {
     while (retries > 0 && !response?.jobData) {
       try {
         console.log(`Attempting to get job data (${4 - retries}/3)...`);
+        
+        // First, ask content script to re-process the page
+        try {
+          await chrome.tabs.sendMessage(tab.id, { action: 'reprocessPage' });
+          await new Promise(resolve => setTimeout(resolve, 300)); // Wait for processing
+        } catch (e) {
+          console.log('Could not trigger reprocess');
+        }
+        
+        // Now get the job data
         response = await chrome.tabs.sendMessage(tab.id, { action: 'getJobData' });
         
         if (response?.jobData) {
@@ -311,6 +321,14 @@ async function analyzeCurrentPage() {
 
 // Display analysis results
 function displayAnalysis(analysis) {
+  console.log('displayAnalysis called with:', {
+    jobTitle: analysis.jobTitle,
+    company: analysis.company,
+    riskScore: analysis.riskScore,
+    hasRedFlags: !!analysis.redFlags,
+    hasPositiveIndicators: !!analysis.positiveIndicators
+  });
+  
   elements.loadingState.style.display = 'none';
   elements.noJobState.style.display = 'none';
   elements.riskCard.style.display = 'block';
@@ -334,8 +352,12 @@ function displayAnalysis(analysis) {
   updateVerdict(riskScore, riskClass);
   
   // Update job details
-  elements.jobTitle.textContent = analysis.jobTitle || 'Unknown Position';
-  elements.companyName.textContent = analysis.company || 'Unknown Company';
+  const displayTitle = analysis.jobTitle || analysis.title || 'Unknown Position';
+  const displayCompany = analysis.company || 'Unknown Company';
+  console.log('Displaying:', { displayTitle, displayCompany });
+  
+  elements.jobTitle.textContent = displayTitle;
+  elements.companyName.textContent = displayCompany;
   
   // Update red flags
   if (analysis.redFlags && analysis.redFlags.length > 0) {
@@ -370,8 +392,14 @@ function displayAnalysis(analysis) {
     }
     
     // H1B Sponsorship Display
-    if (v.h1bSponsorship && v.h1bSponsorship.sponsors) {
-      positiveItems.push(`✓ H1B Visa Sponsor: ${v.h1bSponsorship.note}`);
+    if (v.h1bSponsorship) {
+      if (v.h1bSponsorship.sponsors) {
+        // Company sponsors H1B
+        positiveItems.push(`✓ H1B Visa Sponsor: ${v.h1bSponsorship.note || 'Verified H1B sponsor'}`);
+      } else {
+        // Company checked but doesn't sponsor
+        redFlagItems.push(`H1B sponsorship: ${v.h1bSponsorship.note || 'No records found'}`);
+      }
     }
     
     // Show H1B info in console for debugging

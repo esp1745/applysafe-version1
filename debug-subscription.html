@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ApplySafe Debug Tool</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 40px;
+      max-width: 800px;
+      margin: 0 auto;
+      background: #f3f4f6;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    h1 {
+      color: #111827;
+      margin-bottom: 20px;
+    }
+    h2 {
+      color: #374151;
+      margin: 20px 0 10px;
+      font-size: 18px;
+    }
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+      font-weight: 600;
+      margin: 5px;
+      transition: all 0.3s ease;
+    }
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    .danger {
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    }
+    .success {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+    pre {
+      background: #f9fafb;
+      padding: 15px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 12px;
+      border: 1px solid #e5e7eb;
+    }
+    .status {
+      padding: 15px;
+      border-radius: 8px;
+      margin: 10px 0;
+      font-weight: 500;
+    }
+    .info {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+    .warning {
+      background: #fef3c7;
+      color: #92400e;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 ApplySafe Debug Tool</h1>
+    
+    <h2>Current Subscription Status</h2>
+    <pre id="subscriptionStatus">Loading...</pre>
+    
+    <h2>Actions</h2>
+    <button onclick="loadStatus()">🔄 Refresh Status</button>
+    <button onclick="activatePro()" class="success">✓ Activate Pro (Unlimited)</button>
+    <button onclick="resetTrial()" class="danger">🔄 Reset Trial</button>
+    <button onclick="resetScans()">📊 Reset Today's Scans to 0</button>
+    
+    <h2>Trial Info</h2>
+    <pre id="trialInfo">Loading...</pre>
+    
+    <div id="message"></div>
+  </div>
+
+  <script>
+    async function loadStatus() {
+      try {
+        const response = await chrome.runtime.sendMessage({ action: 'getSubscription' });
+        document.getElementById('subscriptionStatus').textContent = 
+          JSON.stringify(response.subscription, null, 2);
+        
+        const trialResponse = await chrome.runtime.sendMessage({ action: 'getTrialInfo' });
+        document.getElementById('trialInfo').textContent = 
+          JSON.stringify(trialResponse.trialInfo, null, 2);
+      } catch (error) {
+        showMessage('Error: ' + error.message, 'warning');
+      }
+    }
+
+    async function activatePro() {
+      try {
+        const result = await chrome.storage.local.get(['subscription']);
+        const subscription = result.subscription || {};
+        
+        subscription.status = 'active';
+        subscription.stripeCustomerId = 'cus_debug_unlimited';
+        subscription.activatedAt = Date.now();
+        subscription.scansToday = 0;
+        
+        await chrome.storage.local.set({ subscription });
+        
+        showMessage('✓ Pro subscription activated! You now have unlimited scans.', 'info');
+        await loadStatus();
+      } catch (error) {
+        showMessage('Error: ' + error.message, 'warning');
+      }
+    }
+
+    async function resetTrial() {
+      try {
+        const subscription = {
+          status: 'trial',
+          trialStarted: Date.now(),
+          trialEnds: Date.now() + (7 * 24 * 60 * 60 * 1000),
+          scansToday: 0,
+          lastScanReset: Date.now(),
+          licenseKey: null,
+          stripeCustomerId: null
+        };
+        
+        await chrome.storage.local.set({ subscription });
+        
+        showMessage('✓ Trial reset! You have 7 days and 10 scans/day.', 'info');
+        await loadStatus();
+      } catch (error) {
+        showMessage('Error: ' + error.message, 'warning');
+      }
+    }
+
+    async function resetScans() {
+      try {
+        const result = await chrome.storage.local.get(['subscription']);
+        const subscription = result.subscription || {};
+        
+        subscription.scansToday = 0;
+        subscription.lastScanReset = Date.now();
+        
+        await chrome.storage.local.set({ subscription });
+        
+        showMessage('✓ Scan count reset to 0.', 'info');
+        await loadStatus();
+      } catch (error) {
+        showMessage('Error: ' + error.message, 'warning');
+      }
+    }
+
+    function showMessage(text, type = 'info') {
+      const messageDiv = document.getElementById('message');
+      messageDiv.innerHTML = `<div class="status ${type}">${text}</div>`;
+      setTimeout(() => {
+        messageDiv.innerHTML = '';
+      }, 3000);
+    }
+
+    // Load on page load
+    loadStatus();
+  </script>
+</body>
+</html>
