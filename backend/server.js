@@ -31,8 +31,8 @@ app.post('/api/create-checkout', async (req, res) => {
           quantity: 1,
         },
       ],
-      success_url: `http://localhost:3000/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `http://localhost:3000/cancel`,
+      success_url: `https://applysafe-version1.vercel.app/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `https://applysafe-version1.vercel.app/cancel`,
       client_reference_id: clientReferenceId,
       subscription_data: {
         trial_period_days: 7, // 7-day free trial
@@ -495,7 +495,14 @@ app.get('/health', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`ApplySafe backend running on port ${PORT}`);
-  console.log(`Stripe configured: ${!!process.env.STRIPE_SECRET_KEY}`);
-});
+
+// For local development
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`ApplySafe backend running on port ${PORT}`);
+    console.log(`Stripe configured: ${!!process.env.STRIPE_SECRET_KEY}`);
+  });
+}
+
+// Export for Vercel serverless
+module.exports = app;
