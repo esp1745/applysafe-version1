@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to ApplySafe Pro!</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .success-container {
+      background: white;
+      border-radius: 20px;
+      padding: 60px 40px;
+      text-align: center;
+      max-width: 500px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    .checkmark {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 30px;
+      border-radius: 50%;
+      background: #10B981;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: scaleIn 0.5s ease-out;
+    }
+
+    .checkmark svg {
+      width: 50px;
+      height: 50px;
+      stroke: white;
+      stroke-width: 3;
+      fill: none;
+      stroke-dasharray: 100;
+      stroke-dashoffset: 100;
+      animation: drawCheck 0.8s ease-out 0.3s forwards;
+    }
+
+    @keyframes scaleIn {
+      from {
+        transform: scale(0);
+      }
+      to {
+        transform: scale(1);
+      }
+    }
+
+    @keyframes drawCheck {
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+
+    h1 {
+      font-size: 2rem;
+      color: #111827;
+      margin-bottom: 15px;
+    }
+
+    p {
+      font-size: 1.1rem;
+      color: #6B7280;
+      margin-bottom: 30px;
+      line-height: 1.6;
+    }
+
+    .features {
+      text-align: left;
+      margin: 30px 0;
+      padding: 20px;
+      background: #F9FAFB;
+      border-radius: 10px;
+    }
+
+    .feature {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .feature:last-child {
+      margin-bottom: 0;
+    }
+
+    .feature-icon {
+      width: 24px;
+      height: 24px;
+      background: #10B981;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .feature-text {
+      color: #374151;
+      font-size: 0.95rem;
+    }
+
+    .close-btn {
+      background: #6366F1;
+      color: white;
+      border: none;
+      padding: 14px 32px;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .close-btn:hover {
+      background: #4F46E5;
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(99, 102, 241, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="success-container">
+    <div class="checkmark">
+      <svg viewBox="0 0 50 50">
+        <path d="M10 25 L20 35 L40 15" />
+      </svg>
+    </div>
+
+    <h1>Welcome to ApplySafe Pro! 🎉</h1>
+    <p>Your subscription is now active. Enjoy unlimited job scam protection!</p>
+
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">✓</div>
+        <div class="feature-text">Unlimited job scans per day</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">✓</div>
+        <div class="feature-text">H1B visa sponsorship verification</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">✓</div>
+        <div class="feature-text">Complete job history & analytics</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">✓</div>
+        <div class="feature-text">Priority customer support</div>
+      </div>
+    </div>
+
+    <button class="close-btn" onclick="window.close()">Start Using ApplySafe Pro</button>
+  </div>
+
+  <script>
+    // Sync subscription status with backend
+    chrome.runtime.sendMessage({ action: 'syncSubscription' });
+  </script>
+</body>
+</html>

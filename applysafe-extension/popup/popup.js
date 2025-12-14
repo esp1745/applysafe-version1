@@ -5,6 +5,12 @@
 
 // DOM Elements
 const elements = {
+  // Subscription
+  subscriptionBanner: document.getElementById('subscriptionBanner'),
+  bannerTitle: document.getElementById('bannerTitle'),
+  bannerMessage: document.getElementById('bannerMessage'),
+  upgradeBtn: document.getElementById('upgradeBtn'),
+  
   // Stats
   scamsBlocked: document.getElementById('scamsBlocked'),
   jobsScanned: document.getElementById('jobsScanned'),
@@ -56,6 +62,7 @@ let currentTabUrl = null;
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('ApplySafe popup loading...');
   try {
+    await loadSubscriptionStatus();
     await loadStats();
     await loadRecentScans();
     setupEventListeners();
@@ -69,6 +76,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // Setup event listeners
 function setupEventListeners() {
+  elements.upgradeBtn.addEventListener('click', handleUpgrade);
   elements.refreshAnalysis.addEventListener('click', handleRefresh);
   elements.checkUrlBtn.addEventListener('click', handleUrlCheck);
   elements.urlInput.addEventListener('keypress', (e) => {
@@ -78,6 +86,53 @@ function setupEventListeners() {
   elements.whitelistBtn.addEventListener('click', handleWhitelist);
   elements.viewAllBtn.addEventListener('click', openDashboard);
   elements.openSettings.addEventListener('click', openSettings);
+}
+
+// Load subscription status
+async function loadSubscriptionStatus() {
+  try {
+    const response = await chrome.runtime.sendMessage({ action: 'getTrialInfo' });
+    
+    if (response && response.trialInfo) {
+      const info = response.trialInfo;
+      
+      // Show banner if on trial or expired
+      if (info.isTrialActive || info.isExpired) {
+        elements.subscriptionBanner.style.display = 'flex';
+        
+        if (info.isExpired) {
+          elements.subscriptionBanner.className = 'subscription-banner expired';
+          elements.bannerTitle.textContent = 'Trial Expired';
+          elements.bannerMessage.textContent = 'Upgrade to continue using ApplySafe';
+          elements.bannerIcon.textContent = '🔒';
+        } else if (info.isTrialActive) {
+          elements.subscriptionBanner.className = 'subscription-banner trial';
+          elements.bannerTitle.textContent = 'Free Trial';
+          const plural = info.daysLeft === 1 ? 'day' : 'days';
+          elements.bannerMessage.textContent = `${info.daysLeft} ${plural} left • ${info.scansLeft} scans remaining today`;
+        }
+      } else if (info.isPaid) {
+        elements.subscriptionBanner.style.display = 'none';
+      }
+    }
+  } catch (error) {
+    console.error('Error loading subscription:', error);
+  }
+}
+
+// Handle upgrade button click
+async function handleUpgrade() {
+  try {
+    const response = await chrome.runtime.sendMessage({ action: 'startCheckout' });
+    if (response && response.success) {
+      showToast('Opening checkout...', 'success');
+    } else {
+      showToast('Failed to open checkout', 'error');
+    }
+  } catch (error) {
+    console.error('Upgrade error:', error);
+    showToast('Error starting checkout', 'error');
+  }
 }
 
 // Load statistics from storage (now using database)
@@ -228,9 +283,21 @@ async function analyzeCurrentPage() {
         await cacheAnalysis(jobUrl, analysis.result);
         await updateStats(analysis.result);
         await addToRecentScans(jobUrl, response.jobData, analysis.result);
+        
+        // Reload subscription status after scan
+        await loadSubscriptionStatus();
+      } else if (analysis && analysis.error) {
+        // Handle subscription errors
+        if (analysis.error === 'trial_expired' || analysis.error === 'limit_reached') {
+          showError(analysis.message);
+          await loadSubscriptionStatus(); // Update banner
+        } else {
+          console.error('Analysis failed:', analysis);
+          showError(analysis?.message || 'Analysis failed');
+        }
       } else {
         console.error('Analysis failed:', analysis);
-        showError(analysis?.error || 'Analysis failed');
+        showError('Analysis failed');
       }
     } else {
       console.log('No job data available after retries');

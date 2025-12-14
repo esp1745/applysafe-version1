@@ -3,8 +3,9 @@
  * Handles AI analysis, API calls, and extension coordination
  */
 
-// Import database module
+// Import modules
 importScripts('database.js');
+importScripts('subscription.js');
 
 // Configuration
 const CONFIG = {
@@ -23,6 +24,9 @@ let apiKey = null;
 // Initialize extension
 chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === 'install') {
+    // Initialize subscription (start free trial)
+    await initializeSubscription();
+    
     // Set default settings
     await chrome.storage.local.set({
       settings: {
@@ -118,6 +122,25 @@ async function handleMessage(request, sender) {
       case 'getJobsByCompany':
         return { jobs: await getJobsByCompany(request.company) };
         
+      case 'getSubscription':
+        return { subscription: await getSubscriptionStatus() };
+        
+      case 'getTrialInfo':
+        return { trialInfo: await getTrialInfo() };
+        
+      case 'startCheckout':
+        return await createCheckoutSession();
+        
+      case 'validateLicense':
+        return await validateLicenseKey(request.licenseKey);
+        
+      case 'cancelSubscription':
+        return await cancelSubscription();
+        
+      case 'syncSubscription':
+        await syncSubscriptionStatus();
+        return { success: true };
+        
       default:
         return { error: 'Unknown action' };
     }
@@ -130,6 +153,31 @@ async function handleMessage(request, sender) {
 // Analyze job posting with AI
 async function analyzeJob(jobData, url, autoAnalysis = false) {
   try {
+    // Check subscription status first
+    const canAnalyze = await canUseFeature('scan');
+    
+    if (!canAnalyze) {
+      const trialInfo = await getTrialInfo();
+      
+      if (trialInfo.isExpired) {
+        showUpgradePrompt('trial_expired');
+        return {
+          success: false,
+          error: 'trial_expired',
+          message: 'Your 7-day trial has ended. Upgrade to Pro for unlimited scans!',
+          trialInfo
+        };
+      } else {
+        showUpgradePrompt('limit_reached');
+        return {
+          success: false,
+          error: 'limit_reached',
+          message: `Daily scan limit reached (${trialInfo.totalScansToday}/${5}). Upgrade to Pro for unlimited scans!`,
+          trialInfo
+        };
+      }
+    }
+    
     // Get API key first to check if we should use cache
     const key = await getApiKey();
     console.log('ApplySafe: API key present:', !!key);

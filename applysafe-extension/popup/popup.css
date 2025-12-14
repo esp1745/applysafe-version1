@@ -160,6 +160,76 @@ body {
 }
 
 /* ============================================
+   Subscription Banner
+   ============================================ */
+
+.subscription-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
+  border-bottom: 2px solid var(--color-warning);
+}
+
+.subscription-banner.trial {
+  background: linear-gradient(135deg, #DBEAFE 0%, #BFDBFE 100%);
+  border-bottom-color: var(--color-primary);
+}
+
+.subscription-banner.expired {
+  background: linear-gradient(135deg, #FEE2E2 0%, #FECACA 100%);
+  border-bottom-color: var(--color-danger);
+}
+
+.banner-content {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex: 1;
+}
+
+.banner-icon {
+  font-size: 1.25rem;
+}
+
+.banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.banner-text strong {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-gray-800);
+}
+
+.banner-text span {
+  font-size: 0.7rem;
+  color: var(--color-gray-600);
+}
+
+.upgrade-btn {
+  padding: 6px 16px;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition-fast);
+  white-space: nowrap;
+}
+
+.upgrade-btn:hover {
+  background: var(--color-primary-dark);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+/* ============================================
    Stats Bar
    ============================================ */
 
