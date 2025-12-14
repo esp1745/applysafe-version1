@@ -1,0 +1,89 @@
+{
+  "manifest_version": 3,
+  "name": "ApplySafe - AI Job Scam Detector",
+  "version": "1.0.0",
+  "description": "🛡️ Protect yourself from fake job postings with AI-powered scam detection. Analyzes job listings in real-time to identify red flags and keep you safe.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "ApplySafe - Check this job posting"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "tabs",
+    "alarms",
+    "notifications",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://www.linkedin.com/*",
+    "https://linkedin.com/*",
+    "https://www.indeed.com/*",
+    "https://indeed.com/*",
+    "https://www.glassdoor.com/*",
+    "https://glassdoor.com/*",
+    "https://www.ziprecruiter.com/*",
+    "https://www.monster.com/*",
+    "https://www.simplyhired.com/*",
+    "https://www.dice.com/*",
+    "https://www.careerbuilder.com/*",
+    "https://angel.co/*",
+    "https://wellfound.com/*",
+    "https://www.upwork.com/*",
+    "https://www.flexjobs.com/*",
+    "https://www.remote.co/*",
+    "https://weworkremotely.com/*",
+    "https://remoteok.com/*",
+    "https://api.anthropic.com/*",
+    "https://h1bdata.info/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.linkedin.com/jobs/*",
+        "https://linkedin.com/jobs/*",
+        "https://www.indeed.com/*",
+        "https://indeed.com/*",
+        "https://www.glassdoor.com/job-listing/*",
+        "https://www.glassdoor.com/Job/*",
+        "https://www.ziprecruiter.com/jobs/*",
+        "https://www.monster.com/job-openings/*",
+        "https://www.simplyhired.com/job/*",
+        "https://www.dice.com/job-detail/*",
+        "https://www.careerbuilder.com/job-*",
+        "https://angel.co/jobs/*",
+        "https://wellfound.com/jobs/*",
+        "https://www.upwork.com/jobs/*",
+        "https://www.flexjobs.com/job/*",
+        "https://www.remote.co/job/*",
+        "https://weworkremotely.com/remote-jobs/*",
+        "https://remoteok.com/*"
+      ],
+      "js": ["content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options/options.html",
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*", "assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

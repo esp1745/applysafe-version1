@@ -1,0 +1,331 @@
+/**
+ * ApplySafe - Content Script Styles
+ * Beautiful warning badges and overlays
+ */
+
+/* Badge Container */
+#applysafe-warning-badge {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 2147483647;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 380px;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  animation: applysafe-slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.3s ease;
+}
+
+@keyframes applysafe-slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Risk Level Variants */
+#applysafe-warning-badge.applysafe-safe {
+  background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+  border: 2px solid #10B981;
+}
+
+#applysafe-warning-badge.applysafe-warning {
+  background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);
+  border: 2px solid #F59E0B;
+}
+
+#applysafe-warning-badge.applysafe-danger {
+  background: linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%);
+  border: 2px solid #EF4444;
+  animation: applysafe-slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1), applysafe-pulse 2s ease-in-out infinite;
+}
+
+@keyframes applysafe-pulse {
+  0%, 100% {
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2), 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2), 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+}
+
+/* Badge Header */
+.applysafe-badge-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+}
+
+.applysafe-badge-icon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.applysafe-badge-icon svg {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+.applysafe-badge-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.applysafe-badge-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: #1F2937;
+  letter-spacing: -0.01em;
+}
+
+.applysafe-badge-score {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6B7280;
+}
+
+.applysafe-safe .applysafe-badge-score {
+  color: #059669;
+}
+
+.applysafe-warning .applysafe-badge-score {
+  color: #D97706;
+}
+
+.applysafe-danger .applysafe-badge-score {
+  color: #DC2626;
+}
+
+/* Toggle Button */
+.applysafe-badge-toggle {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.applysafe-badge-toggle:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.applysafe-badge-toggle svg {
+  width: 16px;
+  height: 16px;
+  color: #6B7280;
+  transition: transform 0.3s ease;
+}
+
+.applysafe-expanded .applysafe-badge-toggle svg {
+  transform: rotate(180deg);
+}
+
+/* Close Button */
+.applysafe-badge-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.applysafe-badge-close:hover {
+  background: rgba(239, 68, 68, 0.1);
+  opacity: 1;
+}
+
+.applysafe-badge-close svg {
+  width: 14px;
+  height: 14px;
+  color: #EF4444;
+}
+
+/* Badge Content (Expandable) */
+.applysafe-badge-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease, padding 0.3s ease;
+  padding: 0 16px;
+}
+
+.applysafe-expanded .applysafe-badge-content {
+  max-height: 500px;
+  padding: 0 16px 16px;
+}
+
+/* Verdict */
+.applysafe-badge-verdict {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+
+.applysafe-danger .applysafe-badge-verdict {
+  background: rgba(254, 226, 226, 0.8);
+  color: #991B1B;
+}
+
+/* Sections */
+.applysafe-badge-section {
+  margin-bottom: 12px;
+}
+
+.applysafe-badge-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6B7280;
+  margin-bottom: 6px;
+}
+
+.applysafe-badge-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.applysafe-badge-list li {
+  font-size: 12px;
+  color: #DC2626;
+  padding: 4px 0 4px 20px;
+  position: relative;
+}
+
+.applysafe-badge-list li::before {
+  content: '⚠️';
+  position: absolute;
+  left: 0;
+  font-size: 10px;
+}
+
+.applysafe-badge-list.applysafe-positive li {
+  color: #059669;
+}
+
+.applysafe-badge-list.applysafe-positive li::before {
+  content: '✓';
+  font-weight: bold;
+}
+
+/* Explanation */
+.applysafe-badge-explanation {
+  font-size: 12px;
+  color: #4B5563;
+  line-height: 1.6;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  border-left: 3px solid #6366F1;
+}
+
+/* Action Buttons */
+.applysafe-badge-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.applysafe-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.applysafe-btn-report {
+  background: #FEE2E2;
+  color: #DC2626;
+}
+
+.applysafe-btn-report:hover {
+  background: #EF4444;
+  color: white;
+}
+
+.applysafe-btn-report:disabled {
+  background: #D1D5DB;
+  color: #6B7280;
+  cursor: default;
+}
+
+.applysafe-btn-details {
+  background: #E0E7FF;
+  color: #4F46E5;
+}
+
+.applysafe-btn-details:hover {
+  background: #6366F1;
+  color: white;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  #applysafe-warning-badge {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    max-width: none;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  #applysafe-warning-badge {
+    border-width: 3px;
+  }
+  
+  .applysafe-badge-title,
+  .applysafe-badge-verdict {
+    font-weight: 800;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  #applysafe-warning-badge,
+  .applysafe-badge-toggle svg,
+  .applysafe-badge-content {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Print - hide badge */
+@media print {
+  #applysafe-warning-badge {
+    display: none !important;
+  }
+}

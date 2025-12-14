@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Icon Generator</title>
+</head>
+<body>
+    <h1>ApplySafe Icon Generator</h1>
+    <button onclick="downloadAllIcons()" style="margin: 20px 0; padding: 10px 20px; font-size: 16px; cursor: pointer; background: #10B981; color: white; border: none; border-radius: 5px;">Download All PNG Icons</button>
+    <p>Or right-click each canvas and save as PNG with the specified filename:</p>
+    
+    <div style="margin: 20px 0;">
+        <h3>icon16.png</h3>
+        <canvas id="icon16" width="16" height="16"></canvas>
+    </div>
+    
+    <div style="margin: 20px 0;">
+        <h3>icon32.png</h3>
+        <canvas id="icon32" width="32" height="32"></canvas>
+    </div>
+    
+    <div style="margin: 20px 0;">
+        <h3>icon48.png</h3>
+        <canvas id="icon48" width="48" height="48"></canvas>
+    </div>
+    
+    <div style="margin: 20px 0;">
+        <h3>icon128.png</h3>
+        <canvas id="icon128" width="128" height="128"></canvas>
+    </div>
+    
+    <script>
+        function drawIcon(canvasId, size) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            
+            // Scale factor
+            const scale = size / 24;
+            
+            // Create gradient
+            const gradient = ctx.createLinearGradient(3 * scale, 2 * scale, 21 * scale, 22 * scale);
+            gradient.addColorStop(0, '#10B981');
+            gradient.addColorStop(1, '#059669');
+            
+            // Draw shield
+            ctx.beginPath();
+            ctx.moveTo(12 * scale, 2 * scale);
+            ctx.lineTo(3 * scale, 7 * scale);
+            ctx.lineTo(3 * scale, 12 * scale);
+            ctx.bezierCurveTo(3 * scale, 17 * scale, 7 * scale, 21.5 * scale, 12 * scale, 22.5 * scale);
+            ctx.bezierCurveTo(17 * scale, 21.5 * scale, 21 * scale, 17 * scale, 21 * scale, 12 * scale);
+            ctx.lineTo(21 * scale, 7 * scale);
+            ctx.closePath();
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            
+            // Draw checkmark
+            ctx.beginPath();
+            ctx.moveTo(10 * scale, 15.5 * scale);
+            ctx.lineTo(7.5 * scale, 13 * scale);
+            ctx.lineTo(8.91 * scale, 11.59 * scale);
+            ctx.lineTo(10 * scale, 12.67 * scale);
+            ctx.lineTo(14.59 * scale, 8.09 * scale);
+            ctx.lineTo(16 * scale, 9.5 * scale);
+            ctx.closePath();
+            ctx.fillStyle = 'white';
+            ctx.fill();
+        }
+        
+        drawIcon('icon16', 16);
+        drawIcon('icon32', 32);
+        drawIcon('icon48', 48);
+        drawIcon('icon128', 128);
+        
+        function downloadAllIcons() {
+            const sizes = [
+                { id: 'icon16', name: 'icon16.png' },
+                { id: 'icon32', name: 'icon32.png' },
+                { id: 'icon48', name: 'icon48.png' },
+                { id: 'icon128', name: 'icon128.png' }
+            ];
+            
+            sizes.forEach((icon, index) => {
+                setTimeout(() => {
+                    const canvas = document.getElementById(icon.id);
+                    canvas.toBlob(blob => {
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = icon.name;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                    });
+                }, index * 500); // Delay to avoid browser blocking multiple downloads
+            });
+        }
+    </script>
+</body>
+</html>
