@@ -1120,7 +1120,7 @@ async function generateCoverLetter(jobTitle, company, jobDescription, userSkills
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authStatus.accessToken}`
+        'Authorization': `Bearer ${authStatus.token}`
       },
       body: JSON.stringify({
         jobTitle,
@@ -1157,7 +1157,7 @@ async function analyzeResumeMatch(resumeText, jobDescription) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authStatus.accessToken}`
+        'Authorization': `Bearer ${authStatus.token}`
       },
       body: JSON.stringify({
         resumeText,
@@ -1192,7 +1192,7 @@ async function getInterviewPrep(jobTitle, company, industry) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authStatus.accessToken}`
+        'Authorization': `Bearer ${authStatus.token}`
       },
       body: JSON.stringify({
         jobTitle,
@@ -1228,7 +1228,7 @@ async function chatWithAI(message, context = {}) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authStatus.accessToken}`
+        'Authorization': `Bearer ${authStatus.token}`
       },
       body: JSON.stringify({
         message,
@@ -1263,7 +1263,7 @@ async function syncToCloud(applications, reminders) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authStatus.accessToken}`
+        'Authorization': `Bearer ${authStatus.token}`
       },
       body: JSON.stringify({
         applications,
@@ -1305,7 +1305,7 @@ async function syncFromCloud() {
     const response = await fetch(`${CONFIG.BACKEND_URL}/api/v3/sync`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${authStatus.accessToken}`
+        'Authorization': `Bearer ${authStatus.token}`
       }
     });
 
