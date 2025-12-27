@@ -15,14 +15,14 @@
   // Site-specific selectors for extracting job data
   const SITE_SELECTORS = {
     'linkedin.com': {
-      title: '.job-details-jobs-unified-top-card__job-title, .jobs-unified-top-card__job-title, .t-24.t-bold',
-      company: '.job-details-jobs-unified-top-card__company-name, .jobs-unified-top-card__company-name, .jobs-unified-top-card__subtitle-primary-grouping a, .job-details-jobs-unified-top-card__primary-description-without-tagline a, a.app-aware-link[href*="/company/"], .artdeco-entity-lockup__subtitle a',
-      description: '.jobs-description__content, .jobs-box__html-content, .jobs-description-content__text',
-      salary: '.job-details-jobs-unified-top-card__job-insight, .jobs-unified-top-card__job-insight',
-      location: '.job-details-jobs-unified-top-card__bullet, .jobs-unified-top-card__bullet',
+      title: '.job-details-jobs-unified-top-card__job-title, .jobs-unified-top-card__job-title, .t-24.t-bold, h1.t-24, .jobs-details h1, .job-details h1, h1[class*="job"]',
+      company: '.job-details-jobs-unified-top-card__company-name a, .job-details-jobs-unified-top-card__company-name, .jobs-unified-top-card__company-name a, .jobs-unified-top-card__company-name, .jobs-unified-top-card__subtitle-primary-grouping a, .job-details-jobs-unified-top-card__primary-description-without-tagline a, a.app-aware-link[href*="/company/"], .artdeco-entity-lockup__subtitle a, .jobs-company__name a, .jobs-company__name, [data-test-id="job-details-jobs-unified-top-card__company-name"], span[class*="company-name"]',
+      description: '.jobs-description__content, .jobs-box__html-content, .jobs-description-content__text, #job-details, .jobs-details__main-content',
+      salary: '.job-details-jobs-unified-top-card__job-insight, .jobs-unified-top-card__job-insight, .salary-main-rail__salary-range',
+      location: '.job-details-jobs-unified-top-card__bullet, .jobs-unified-top-card__bullet, .job-details-jobs-unified-top-card__primary-description-container span',
       posted: '.jobs-unified-top-card__posted-date',
       applicants: '.jobs-unified-top-card__applicant-count',
-      container: '.jobs-search__job-details, .job-view-layout'
+      container: '.jobs-search__job-details, .job-view-layout, .jobs-details'
     },
     'indeed.com': {
       title: 'h1.jobsearch-JobInfoHeader-title, h1[class*="jobsearch-JobInfoHeader-title"], .jobsearch-JobInfoHeader-title span, [data-testid="jobsearch-JobInfoHeader-title"], h1.icl-u-xs-mb--xs, .jobsearch-ViewJobLayout h1, #viewJobSSRRoot h1',
@@ -65,6 +65,78 @@
       location: '[data-cy="locationText"]',
       container: '.job-details-container'
     },
+    'greenhouse.io': {
+      title: '.app-title, h1.heading, h1',
+      company: '.company-name, .employer-name, [class*="company"]',
+      description: '#content, .content, .job-description, [class*="description"]',
+      salary: '[class*="salary"], [class*="compensation"]',
+      location: '.location, [class*="location"]',
+      container: '#app_body, .application, main'
+    },
+    'lever.co': {
+      title: '.posting-headline h2, h1.posting-headline, h2',
+      company: '.posting-company, [class*="company"]',
+      description: '.posting-page .content, .section-wrapper, [data-qa="job-description"]',
+      salary: '[class*="salary"], [class*="compensation"]',
+      location: '.posting-categories .location, .location, [class*="location"]',
+      container: '.posting-page, .content-wrapper, main'
+    },
+    'myworkdayjobs.com': {
+      title: '[data-automation-id="jobPostingHeader"], h2[data-automation-id], h1',
+      company: '[data-automation-id="companyName"], [class*="company"]',
+      description: '[data-automation-id="jobPostingDescription"], [class*="description"]',
+      salary: '[data-automation-id="salary"], [class*="salary"]',
+      location: '[data-automation-id="location"], [class*="location"]',
+      container: '[data-automation-id="jobPostingPage"], main'
+    },
+    'bamboohr.com': {
+      title: 'h1.JobDetails__title, h1',
+      company: '.JobDetails__company, [class*="company"]',
+      description: '.JobDetails__description, [class*="description"]',
+      salary: '[class*="salary"], [class*="compensation"]',
+      location: '.JobDetails__location, [class*="location"]',
+      container: '.JobDetails, main'
+    },
+    'icims.com': {
+      title: '.iCIMS_Header h1, h1',
+      company: '.iCIMS_CompanyName, [class*="company"]',
+      description: '.iCIMS_JobContent, [class*="description"]',
+      salary: '[class*="salary"]',
+      location: '.iCIMS_JobLocation, [class*="location"]',
+      container: '.iCIMS_MainWrapper, main'
+    },
+    'smartrecruiters.com': {
+      title: 'h1.job-title, h1',
+      company: '.company-name, [class*="company"]',
+      description: '.job-description, [class*="description"]',
+      salary: '[class*="salary"]',
+      location: '.job-location, [class*="location"]',
+      container: '.job-details, main'
+    },
+    'jobvite.com': {
+      title: 'h1.jv-header, h1',
+      company: '.jv-company-name, [class*="company"]',
+      description: '.jv-job-detail-description, [class*="description"]',
+      salary: '[class*="salary"]',
+      location: '.jv-job-detail-meta .location, [class*="location"]',
+      container: '.jv-job-detail, main'
+    },
+    'ashbyhq.com': {
+      title: 'h1[class*="Title"], h1',
+      company: '[class*="CompanyName"], [class*="company"]',
+      description: '[class*="Description"], [class*="JobDescription"]',
+      salary: '[class*="Compensation"], [class*="salary"]',
+      location: '[class*="Location"]',
+      container: '[class*="JobPosting"], main'
+    },
+    'breezy.hr': {
+      title: '.position-title h1, h1',
+      company: '.company-name, [class*="company"]',
+      description: '.position-description, [class*="description"]',
+      salary: '[class*="salary"]',
+      location: '.position-location, [class*="location"]',
+      container: '.position-page, main'
+    },
     'google.com': {
       title: 'h1, h2, h3[class*="title"], [role="heading"], [class*="job-title"]',
       company: '[class*="company"], [class*="employer"], [itemprop="hiringOrganization"]',
@@ -104,10 +176,62 @@
     observePageChanges();
   }
 
+  // Check if this is actually a job posting page (not a profile, feed, etc.)
+  function isJobPostingPage() {
+    const url = window.location.href.toLowerCase();
+    const hostname = window.location.hostname.toLowerCase();
+    
+    // LinkedIn-specific checks
+    if (hostname.includes('linkedin.com')) {
+      // Valid job URLs contain /jobs/ or /job-view/
+      if (url.includes('/jobs/view/') || url.includes('/jobs/collections/')) {
+        return true;
+      }
+      // Exclude profile pages, feed, messaging, etc.
+      if (url.includes('/in/') || url.includes('/feed') || url.includes('/messaging') || 
+          url.includes('/mynetwork') || url.includes('/notifications')) {
+        console.log('ApplySafe: Skipping - this is a LinkedIn profile/feed page, not a job posting');
+        return false;
+      }
+      // Generic /jobs/ might be job search results
+      if (url.includes('/jobs/')) {
+        return true;
+      }
+      return false;
+    }
+    
+    // Indeed - must be viewing a specific job
+    if (hostname.includes('indeed.com')) {
+      if (url.includes('/viewjob') || url.includes('/job/') || url.includes('jk=')) {
+        return true;
+      }
+      return false;
+    }
+    
+    // Glassdoor - job listings
+    if (hostname.includes('glassdoor.com')) {
+      if (url.includes('/job-listing/') || url.includes('/Job/')) {
+        return true;
+      }
+      return false;
+    }
+    
+    // For other job sites, assume they're job pages (they're more specialized)
+    return true;
+  }
+
   // Process the current page
   function processPage() {
     if (processed) {
       console.log('ApplySafe: Page already processed, skipping');
+      return;
+    }
+    
+    // Check if this is actually a job posting page
+    if (!isJobPostingPage()) {
+      console.log('ApplySafe: Not a job posting page, skipping analysis');
+      processed = true;
+      currentJobData = null;
       return;
     }
     
@@ -200,12 +324,77 @@
     data.pageMetadata = extractMetadata();
     data.companyWebsite = extractCompanyWebsite();
     
+    // LinkedIn-specific company extraction fallback
+    if ((!data.company || data.company.length < 2) && window.location.hostname.includes('linkedin.com')) {
+      console.log('ApplySafe: Attempting LinkedIn company extraction fallbacks...');
+      
+      // Try various LinkedIn-specific selectors
+      const linkedinCompanySelectors = [
+        // New LinkedIn job card layout
+        '.jobs-unified-top-card__company-name',
+        '.job-details-jobs-unified-top-card__company-name',
+        // Company link in header
+        'a[href*="/company/"]',
+        // Company name near job title  
+        '.jobs-top-card__company-url',
+        '.topcard__org-name-link',
+        // Any link containing company
+        '.jobs-unified-top-card a[data-control-name*="company"]',
+        // Fallback to any company-related element
+        '[class*="company-name"]',
+        '[class*="companyName"]'
+      ];
+      
+      for (const selector of linkedinCompanySelectors) {
+        const element = document.querySelector(selector);
+        if (element) {
+          const text = element.textContent.trim();
+          // Validate it's a reasonable company name (not too long, not empty)
+          if (text.length >= 2 && text.length < 100 && !text.includes('\n')) {
+            data.company = text;
+            console.log('ApplySafe: Company found via LinkedIn fallback:', data.company, 'using selector:', selector);
+            break;
+          }
+        }
+      }
+      
+      // Last resort: Extract company from any /company/ link URL
+      if (!data.company || data.company.length < 2) {
+        const companyLink = document.querySelector('a[href*="/company/"]');
+        if (companyLink) {
+          const href = companyLink.getAttribute('href');
+          const match = href.match(/\/company\/([^/?]+)/);
+          if (match && match[1]) {
+            // Convert URL slug to title case (e.g., "amazon" -> "Amazon")
+            const slug = match[1].replace(/-/g, ' ');
+            data.company = slug.charAt(0).toUpperCase() + slug.slice(1);
+            console.log('ApplySafe: Company extracted from LinkedIn URL slug:', data.company);
+          }
+        }
+      }
+    }
+    
     // Fallback 1: Try to extract company from page title if not found
     if (!data.company || data.company.length < 2) {
       const pageTitle = document.title;
       
+      // LinkedIn title format: "Job Title | Company Name | LinkedIn" or "(X) Job Title | Company"
+      if (window.location.hostname.includes('linkedin.com')) {
+        // Remove notification count like "(3)"
+        const cleanTitle = pageTitle.replace(/^\(\d+\)\s*/, '');
+        const parts = cleanTitle.split('|').map(p => p.trim());
+        
+        // Usually: [Job Title, Company Name, LinkedIn]
+        if (parts.length >= 2) {
+          const potentialCompany = parts[1];
+          if (potentialCompany && potentialCompany.toLowerCase() !== 'linkedin' && potentialCompany.length > 1) {
+            data.company = potentialCompany;
+            console.log('ApplySafe: Company extracted from LinkedIn page title:', data.company);
+          }
+        }
+      }
       // Google Careers format: "JobTitle - Google Careers"
-      if (pageTitle.includes('Google')) {
+      else if (pageTitle.includes('Google')) {
         data.company = 'Google';
         console.log('ApplySafe: Company extracted as Google from title');
       }
@@ -405,7 +594,13 @@
       case 'reprocessPage':
         // Re-extract job data (for popup opening)
         console.log('ApplySafe: Reprocess page requested');
-        currentJobData = extractJobData();
+        // Only extract if this is actually a job posting page
+        if (isJobPostingPage()) {
+          currentJobData = extractJobData();
+        } else {
+          currentJobData = null;
+          console.log('ApplySafe: Not a job posting page, setting job data to null');
+        }
         sendResponse({ success: true });
         break;
         
@@ -413,7 +608,13 @@
         // If we don't have job data yet, try to extract it now
         if (!currentJobData) {
           console.log('ApplySafe: No cached job data, extracting now...');
-          currentJobData = extractJobData();
+          // Only extract if this is actually a job posting page
+          if (isJobPostingPage()) {
+            currentJobData = extractJobData();
+          } else {
+            currentJobData = null;
+            console.log('ApplySafe: Not a job posting page');
+          }
         }
         sendResponse({ jobData: currentJobData });
         console.log('ApplySafe: Sent job data:', currentJobData ? 'available' : 'null');

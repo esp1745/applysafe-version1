@@ -129,12 +129,21 @@ async function createCheckoutSession() {
     
     const subscription = await getSubscriptionStatus();
     
+    // Get user info if signed in
+    const userData = await chrome.storage.local.get(['user']);
+    const userEmail = userData.user?.email;
+    
     const requestBody = {
       priceId: SUBSCRIPTION_CONFIG.PRICE_ID,
       customerId: subscription.stripeCustomerId,
+      customerEmail: userEmail,
       successUrl: chrome.runtime.getURL('popup/success.html'),
       cancelUrl: chrome.runtime.getURL('popup/popup.html')
     };
+    
+    if (userEmail) {
+      console.log('User email for checkout:', userEmail);
+    }
     
     console.log('Request body:', JSON.stringify(requestBody, null, 2));
     
@@ -249,25 +258,38 @@ async function syncSubscriptionStatus() {
   try {
     const subscription = await getSubscriptionStatus();
     
-    if (!subscription.licenseKey && !subscription.stripeCustomerId) {
-      return; // No subscription to sync
+    // Get user email for syncing by email if no stripeCustomerId
+    const userData = await chrome.storage.local.get(['user']);
+    const userEmail = userData.user?.email;
+    
+    // If no customerId, licenseKey, or email, we can't sync
+    if (!subscription.licenseKey && !subscription.stripeCustomerId && !userEmail) {
+      console.log('Sync skipped: no customerId, licenseKey, or email');
+      return;
     }
+    
+    console.log('Syncing subscription for:', { customerId: subscription.stripeCustomerId, email: userEmail });
     
     const response = await fetch(`${SUBSCRIPTION_CONFIG.API_ENDPOINT}/subscription-status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         licenseKey: subscription.licenseKey,
-        customerId: subscription.stripeCustomerId
+        customerId: subscription.stripeCustomerId,
+        email: userEmail
       })
     });
     
     const data = await response.json();
+    console.log('Subscription sync response:', data);
     
     if (data.status) {
       subscription.status = data.status; // 'active', 'canceled', 'expired'
       subscription.planName = data.planName;
       subscription.renewsAt = data.renewsAt;
+      if (data.stripeCustomerId) {
+        subscription.stripeCustomerId = data.stripeCustomerId;
+      }
       
       await chrome.storage.local.set({ subscription });
       console.log('Subscription synced:', data.status);

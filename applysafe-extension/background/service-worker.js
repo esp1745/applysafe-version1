@@ -6,20 +6,22 @@
 // Import modules
 importScripts('database.js');
 importScripts('subscription.js');
+importScripts('auth.js');
+importScripts('h1b.js');
 
 // Configuration
 const CONFIG = {
-  API_ENDPOINT: 'https://api.anthropic.com/v1/messages',
+  BACKEND_URL: 'https://applysafe-version1.vercel.app',
+  API_ENDPOINT: 'https://applysafe-version1.vercel.app/api/analyze-job',
   MODEL: 'claude-3-haiku-20240307', // Fast and cost-effective for this use case
   MAX_TOKENS: 1024,
   CACHE_DURATION: 3600000, // 1 hour in ms
   RATE_LIMIT_DELAY: 500, // 500ms between API calls (only for auto-analysis)
-  API_TIMEOUT: 5000 // 5 second timeout for faster response
+  API_TIMEOUT: 15000 // 15 second timeout (backend proxy needs more time)
 };
 
 // State
 let lastApiCall = 0;
-let apiKey = null;
 
 // Initialize extension
 chrome.runtime.onInstalled.addListener(async (details) => {
@@ -48,6 +50,10 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     
     // Open options page for API key setup
     chrome.runtime.openOptionsPage();
+  } else if (details.reason === 'update') {
+    // Clear old cache on extension update to refresh H1B data
+    console.log('ApplySafe: Extension updated, clearing old caches');
+    await chrome.storage.local.remove(['analysisCache', 'h1bCache']);
   }
 });
 
@@ -97,8 +103,10 @@ try {
 
 // Message handler
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('📨 Message received:', request.action);
   handleMessage(request, sender)
     .then(response => {
+      console.log('📤 Response sent for:', request.action);
       sendResponse(response);
     })
     .catch(error => {
@@ -121,13 +129,6 @@ async function handleMessage(request, sender) {
       case 'jobDetected':
         // Log job detection for analytics
         console.log('Job detected:', request.jobData?.title);
-        return { success: true };
-        
-      case 'getApiKey':
-        return { apiKey: await getApiKey() };
-        
-      case 'setApiKey':
-        await setApiKey(request.apiKey);
         return { success: true };
         
       case 'openPopup':
@@ -176,6 +177,63 @@ async function handleMessage(request, sender) {
       case 'activateSubscription':
         return await activateSubscription(request.customerId, request.sessionId);
         
+      case 'getAuthStatus':
+        return { authStatus: await auth.getAuthStatus() };
+        
+      case 'signInWithGoogle':
+        return await auth.signInWithGoogle();
+        
+      case 'signOut':
+        return await auth.signOut();
+        
+      case 'clearCache':
+        await clearAllCache();
+        return { success: true };
+      
+      // H1B Sponsorship Actions
+      case 'checkH1BSponsorship':
+        const h1bResult = await self.h1bModule.checkH1BSponsorship(request.companyName);
+        return { success: true, h1bData: h1bResult };
+        
+      case 'submitH1BFeedback':
+        return await self.h1bModule.submitH1BFeedback(
+          request.companyName, 
+          request.isAccurate, 
+          request.comment
+        );
+        
+      case 'getH1BFeedback':
+        const feedback = await self.h1bModule.getH1BFeedback(request.companyName);
+        return { success: true, feedback: feedback };
+      
+      // V3 Features - AI & Cloud Sync
+      case 'generateCoverLetter':
+        return await generateCoverLetter(request.jobTitle, request.company, request.jobDescription, request.userSkills);
+        
+      case 'analyzeResume':
+        return await analyzeResumeMatch(request.resumeText, request.jobDescription);
+        
+      case 'getInterviewPrep':
+        return await getInterviewPrep(request.jobTitle, request.company, request.industry);
+        
+      case 'chatWithAI':
+        return await chatWithAI(request.message, request.context);
+        
+      case 'syncToCloud':
+        return await syncToCloud(request.applications, request.reminders);
+        
+      case 'syncFromCloud':
+        return await syncFromCloud();
+        
+      case 'scheduleReminder':
+        return await scheduleReminder(request.reminder);
+        
+      case 'cancelReminder':
+        return await cancelReminder(request.reminderId);
+        
+      case 'getReminders':
+        return await getReminders();
+        
       default:
         return { error: 'Unknown action' };
     }
@@ -185,57 +243,77 @@ async function handleMessage(request, sender) {
   }
 }
 
+// Clear all cached data (analysis and H1B cache)
+async function clearAllCache() {
+  try {
+    await chrome.storage.local.remove(['analysisCache', 'h1bCache']);
+    console.log('ApplySafe: All caches cleared');
+  } catch (error) {
+    console.error('Error clearing cache:', error);
+  }
+}
+
 // Analyze job posting with AI
 async function analyzeJob(jobData, url, autoAnalysis = false) {
   try {
-    // Check subscription status first
-    const canAnalyze = await canUseFeature('scan');
+    // Check auth status and feature access
+    const authStatus = await auth.getAuthStatus();
+    const canAnalyze = await auth.canUseFeature('scan', url);
     
-    if (!canAnalyze) {
-      const trialInfo = await getTrialInfo();
-      
-      if (trialInfo.isExpired) {
-        showUpgradePrompt('trial_expired');
-        return {
-          success: false,
-          error: 'trial_expired',
-          message: 'Your 7-day trial has ended. Upgrade to Pro for unlimited scans!',
-          trialInfo
-        };
-      } else if (!trialInfo.isPaid) {
-        // Only show limit error for non-paid users
+    if (!canAnalyze.allowed) {
+      // User has exceeded limits
+      if (authStatus.isAuthenticated) {
+        // Signed in user - show server-synced limits
         showUpgradePrompt('limit_reached');
         return {
           success: false,
           error: 'limit_reached',
-          message: `Daily scan limit reached (${trialInfo.totalScansToday}/10). Upgrade to Pro for unlimited scans!`,
-          trialInfo
+          message: `Daily scan limit reached (${canAnalyze.usage.scansToday}/10). Upgrade to Pro for unlimited scans!`,
+          usage: canAnalyze.usage
         };
+      } else {
+        // Anonymous user - check local trial
+        const localTrial = auth.getLocalTrialInfo();
+        if (localTrial.isExpired) {
+          showUpgradePrompt('trial_expired');
+          return {
+            success: false,
+            error: 'trial_expired',
+            message: 'Your 7-day trial has ended. Sign in with Google or upgrade to Pro!',
+            trialInfo: localTrial
+          };
+        } else {
+          showUpgradePrompt('limit_reached');
+          return {
+            success: false,
+            error: 'limit_reached',
+            message: `Daily scan limit reached (${localTrial.scansToday}/10). Sign in with Google or upgrade to Pro!`,
+            trialInfo: localTrial
+          };
+        }
       }
-      // If paid user and canAnalyze is false, something is wrong - proceed anyway
-      console.log('Warning: Paid user but canAnalyze returned false, proceeding...');
     }
     
-    // Get API key first to check if we should use cache
-    const key = await getApiKey();
-    console.log('ApplySafe: API key present:', !!key);
-    console.log('ApplySafe: API key length:', key ? key.length : 0);
+    // Always perform company verification (includes H1B check) - do this early
+    console.log('ApplySafe: Starting company verification and H1B check...');
+    const companyVerification = await verifyCompany(
+      jobData.company,
+      jobData.companyWebsite,
+      jobData.title
+    );
+    console.log('ApplySafe: Company verification complete:', companyVerification);
     
-    if (!key) {
-      // Return a heuristic-based analysis if no API key (instant)
-      console.log('ApplySafe: Using heuristic analysis (no API key)');
-      return {
-        success: true,
-        result: performHeuristicAnalysis(jobData)
-      };
-    }
-    
-    console.log('ApplySafe: API key found, will use AI analysis');
-    
-    // Check cache after confirming we have API key
+    // Check cache first
     const cached = await getCachedAnalysis(url);
     if (cached && (Date.now() - cached.timestamp < CONFIG.CACHE_DURATION)) {
       console.log('ApplySafe: Using cached analysis');
+      // Add fresh H1B data to cached result if available
+      if (companyVerification && companyVerification.h1bSponsorship) {
+        cached.companyVerification = cached.companyVerification || {};
+        cached.companyVerification.h1bSponsorship = companyVerification.h1bSponsorship;
+      }
+      // Update stats even for cached results (counts as a scan view)
+      await updateJobStats();
       return { success: true, result: cached };
     }
     
@@ -248,20 +326,10 @@ async function analyzeJob(jobData, url, autoAnalysis = false) {
       lastApiCall = Date.now();
     }
     
-    console.log('ApplySafe: Starting AI analysis...');
-    
-    // Perform company verification (includes H1B check)
-    const companyVerification = await verifyCompany(
-      jobData.company,
-      jobData.companyWebsite,
-      jobData.title
-    );
-    
-    // Build the analysis prompt
-    const prompt = buildAnalysisPrompt(jobData);
+    console.log('ApplySafe: Starting AI analysis via backend proxy...');
     
     // Log what we're sending to AI
-    console.log('ApplySafe: Sending to AI:', {
+    console.log('ApplySafe: Sending to backend:', {
       title: jobData.title,
       company: jobData.company,
       descriptionLength: jobData.description?.length || 0,
@@ -272,72 +340,95 @@ async function analyzeJob(jobData, url, autoAnalysis = false) {
       companyVerification: companyVerification
     });
     
-    // Call Claude API with timeout
+    // Call backend API with timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), CONFIG.API_TIMEOUT);
     
     let response;
     let data;
-    let analysisText;
     
-    console.log('ApplySafe: Calling Claude API...');
+    console.log('ApplySafe: Calling backend AI proxy...');
     const apiStartTime = Date.now();
     
     try {
       response = await fetch(CONFIG.API_ENDPOINT, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': key,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: CONFIG.MODEL,
-          max_tokens: CONFIG.MAX_TOKENS,
-          messages: [{
-            role: 'user',
-            content: prompt
-          }]
+          jobData: {
+            title: jobData.title,
+            company: jobData.company,
+            description: jobData.description,
+            salary: jobData.salary,
+            location: jobData.location,
+            contactEmail: jobData.contactEmail,
+            companyDomain: jobData.companyDomain,
+            companyWebsite: jobData.companyWebsite
+          }
         }),
         signal: controller.signal
       });
       clearTimeout(timeoutId);
       
       const apiDuration = Date.now() - apiStartTime;
-      console.log(`ApplySafe: API response received in ${apiDuration}ms`);
+      console.log(`ApplySafe: Backend response received in ${apiDuration}ms`);
     
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error('API Error:', errorData);
+        console.error('Backend API Error:', errorData);
         
         // Fallback to heuristic analysis
+        const heuristicResult = performHeuristicAnalysis(jobData);
+        if (companyVerification) {
+          heuristicResult.companyVerification = companyVerification;
+        }
+        await updateJobStats();
         return {
           success: true,
-          result: performHeuristicAnalysis(jobData)
+          result: heuristicResult
         };
       }
       
       data = await response.json();
-      analysisText = data.content[0].text;
+      
+      if (!data.success) {
+        console.error('Backend returned error:', data.error);
+        // Fallback to heuristic analysis
+        const heuristicResult = performHeuristicAnalysis(jobData);
+        if (companyVerification) {
+          heuristicResult.companyVerification = companyVerification;
+        }
+        await updateJobStats();
+        return {
+          success: true,
+          result: heuristicResult
+        };
+      }
     } catch (fetchError) {
       clearTimeout(timeoutId);
       if (fetchError.name === 'AbortError') {
-        console.log('ApplySafe: API timeout, using heuristic analysis');
+        console.log('ApplySafe: Backend timeout, using heuristic analysis');
       } else {
-        console.error('ApplySafe: API fetch error:', fetchError);
+        console.error('ApplySafe: Backend fetch error:', fetchError);
       }
       // Fallback to heuristic analysis
+      const heuristicResult = performHeuristicAnalysis(jobData);
+      if (companyVerification) {
+        heuristicResult.companyVerification = companyVerification;
+      }
+      await updateJobStats();
       return {
         success: true,
-        result: performHeuristicAnalysis(jobData)
+        result: heuristicResult
       };
     }
     
-    console.log('ApplySafe: AI response received, parsing...');
+    console.log('ApplySafe: Backend response received, processing...');
     
-    // Parse AI response
-    const analysis = parseAIResponse(analysisText, jobData);
+    // Use the analysis from backend
+    const analysis = data.analysis;
     
     // Add verification info to analysis for display
     if (companyVerification) {
@@ -377,6 +468,9 @@ async function analyzeJob(jobData, url, autoAnalysis = false) {
       }
     }
     
+    // Update stats
+    await updateJobStats();
+    
     return { success: true, result: analysis };
     
   } catch (error) {
@@ -387,6 +481,19 @@ async function analyzeJob(jobData, url, autoAnalysis = false) {
       success: true,
       result: performHeuristicAnalysis(jobData)
     };
+  }
+}
+
+// Update job scan stats
+async function updateJobStats() {
+  try {
+    const result = await chrome.storage.local.get(['stats']);
+    const stats = result.stats || { scamsBlocked: 0, jobsScanned: 0, reportsSubmitted: 0 };
+    stats.jobsScanned = (stats.jobsScanned || 0) + 1;
+    await chrome.storage.local.set({ stats });
+    console.log('ApplySafe: Stats updated, jobs scanned:', stats.jobsScanned);
+  } catch (error) {
+    console.error('Error updating stats:', error);
   }
 }
 
@@ -654,23 +761,6 @@ function showNotification(analysis, jobData) {
   });
 }
 
-// API key management
-async function getApiKey() {
-  if (apiKey) return apiKey;
-  
-  const result = await chrome.storage.local.get(['settings']);
-  apiKey = result.settings?.apiKey || '';
-  return apiKey;
-}
-
-async function setApiKey(key) {
-  apiKey = key;
-  const result = await chrome.storage.local.get(['settings']);
-  const settings = result.settings || {};
-  settings.apiKey = key;
-  await chrome.storage.local.set({ settings });
-}
-
 // Context menu click handler
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'analyzeJob') {
@@ -696,54 +786,216 @@ async function checkH1BSponsorship(companyName) {
       return null;
     }
     
-    // Clean company name for search
-    const cleanName = companyName
-      .replace(/,?\s*(Inc\.|LLC|Ltd\.|Corp\.|Corporation|Company|Co\.)$/i, '')
+    // Clean company name for search - remove common suffixes
+    let cleanName = companyName
+      .replace(/,?\s*(Inc\.?|LLC|Ltd\.?|Corp\.?|Corporation|Company|Co\.|Limited|L\.?P\.?|PLC|GmbH|S\.?A\.?|N\.?V\.?)$/i, '')
+      .replace(/\s+/g, ' ')
       .trim();
     
     console.log(`Checking H1B sponsorship for: "${cleanName}"`);
     
-    // Use h1bdata.info HTML page (they don't have a proper REST API)
-    const response = await fetch(
-      `https://h1bdata.info/index.php?em=${encodeURIComponent(cleanName)}&job=&city=&year=All+Years`,
-      {
-        method: 'GET',
-        headers: {
-          'Accept': 'text/html'
-        }
-      }
-    );
+    // First, check against known major H-1B sponsors (instant lookup)
+    const knownSponsors = getKnownH1BSponsors();
+    const lowerName = cleanName.toLowerCase();
     
-    if (!response.ok) {
-      console.log('H1B API returned status:', response.status);
-      return null;
+    for (const [company, data] of Object.entries(knownSponsors)) {
+      if (lowerName.includes(company) || company.includes(lowerName)) {
+        console.log(`✓ Found in known H1B sponsors list: ${company}`);
+        return {
+          sponsors: true,
+          note: data.note,
+          totalApplications: data.approx,
+          employer: companyName,
+          source: 'known-sponsors'
+        };
+      }
     }
     
-    const html = await response.text();
-    
-    // Parse the HTML to find record count
-    const recordMatch = html.match(/(\d+)\s+records?\s+(?:was|were)\s+found/i);
-    
-    if (recordMatch && parseInt(recordMatch[1]) > 0) {
-      const count = parseInt(recordMatch[1]);
-      console.log(`✓ Found H1B sponsorship: ${count} records`);
-      return {
-        sponsors: true,
-        note: `Has sponsored ${count} H1B visa${count > 1 ? 's' : ''} (verified)`,
-        totalApplications: count,
-        employer: companyName
-      };
+    // Try h1bdata.info for companies not in the known list
+    try {
+      console.log('Checking h1bdata.info for:', cleanName);
+      const response = await fetch(
+        `https://h1bdata.info/index.php?em=${encodeURIComponent(cleanName)}&job=&city=&year=All+Years`,
+        {
+          method: 'GET',
+          headers: {
+            'Accept': 'text/html'
+          }
+        }
+      );
+      
+      if (response.ok) {
+        const html = await response.text();
+        console.log('H1B response received, length:', html.length);
+        
+        // Parse the HTML to find record count - matches "X records was found" or "X records were found"
+        const recordMatch = html.match(/(\d[\d,]*)\s+records?\s+(?:was|were)\s+found/i);
+        
+        // Also check for salary info which indicates records exist
+        const salaryMatch = html.match(/Median Salary is \$([\d,]+)/i);
+        
+        if (recordMatch) {
+          const countStr = recordMatch[1].replace(/,/g, '');
+          const count = parseInt(countStr);
+          
+          if (count > 0) {
+            console.log(`✓ Found H1B sponsorship via h1bdata.info: ${count} records`);
+            return {
+              sponsors: true,
+              note: `Has sponsored ${count.toLocaleString()} H-1B visa${count > 1 ? 's' : ''} (verified)`,
+              totalApplications: count,
+              employer: companyName,
+              source: 'h1bdata.info'
+            };
+          }
+        }
+        
+        if (salaryMatch) {
+          console.log('✓ Found H1B salary data via h1bdata.info');
+          return {
+            sponsors: true,
+            note: 'Company has H-1B sponsorship records (verified)',
+            employer: companyName,
+            source: 'h1bdata.info'
+          };
+        }
+        
+        console.log('No H1B records found in h1bdata.info response');
+      } else {
+        console.log('h1bdata.info returned status:', response.status);
+      }
+    } catch (fetchError) {
+      console.log('h1bdata.info fetch error:', fetchError.message);
     }
     
     console.log(`No H1B sponsorship records found for "${cleanName}"`);
     return {
       sponsors: false,
-      note: 'No H1B sponsorship records found'
+      note: 'No H-1B sponsorship records found in database'
     };
   } catch (error) {
     console.log('H1B check error:', error.message);
-    // Return null to indicate check was not possible, not that they don't sponsor
     return null;
+  }
+}
+
+// Known major H-1B sponsors (top sponsors by volume)
+function getKnownH1BSponsors() {
+  return {
+    'amazon': { approx: 50000, note: 'Top H-1B sponsor - ~50,000+ visas sponsored' },
+    'google': { approx: 35000, note: 'Major H-1B sponsor - ~35,000+ visas sponsored' },
+    'microsoft': { approx: 30000, note: 'Major H-1B sponsor - ~30,000+ visas sponsored' },
+    'meta': { approx: 15000, note: 'Major H-1B sponsor - ~15,000+ visas sponsored' },
+    'facebook': { approx: 15000, note: 'Major H-1B sponsor - ~15,000+ visas sponsored' },
+    'apple': { approx: 12000, note: 'Major H-1B sponsor - ~12,000+ visas sponsored' },
+    'intel': { approx: 10000, note: 'Major H-1B sponsor - ~10,000+ visas sponsored' },
+    'ibm': { approx: 15000, note: 'Major H-1B sponsor - ~15,000+ visas sponsored' },
+    'infosys': { approx: 40000, note: 'Top H-1B sponsor - ~40,000+ visas sponsored' },
+    'tata consultancy': { approx: 35000, note: 'Top H-1B sponsor - ~35,000+ visas sponsored' },
+    'cognizant': { approx: 30000, note: 'Major H-1B sponsor - ~30,000+ visas sponsored' },
+    'accenture': { approx: 15000, note: 'Major H-1B sponsor - ~15,000+ visas sponsored' },
+    'deloitte': { approx: 12000, note: 'Major H-1B sponsor - ~12,000+ visas sponsored' },
+    'walmart': { approx: 5000, note: 'H-1B sponsor - ~5,000+ visas sponsored' },
+    'uber': { approx: 5000, note: 'H-1B sponsor - ~5,000+ visas sponsored' },
+    'salesforce': { approx: 5000, note: 'H-1B sponsor - ~5,000+ visas sponsored' },
+    'oracle': { approx: 8000, note: 'Major H-1B sponsor - ~8,000+ visas sponsored' },
+    'cisco': { approx: 8000, note: 'Major H-1B sponsor - ~8,000+ visas sponsored' },
+    'qualcomm': { approx: 5000, note: 'H-1B sponsor - ~5,000+ visas sponsored' },
+    'nvidia': { approx: 4000, note: 'H-1B sponsor - ~4,000+ visas sponsored' },
+    'adobe': { approx: 3500, note: 'H-1B sponsor - ~3,500+ visas sponsored' },
+    'linkedin': { approx: 3000, note: 'H-1B sponsor - ~3,000+ visas sponsored' },
+    'netflix': { approx: 2000, note: 'H-1B sponsor - ~2,000+ visas sponsored' },
+    'airbnb': { approx: 1500, note: 'H-1B sponsor - ~1,500+ visas sponsored' },
+    'stripe': { approx: 1500, note: 'H-1B sponsor - ~1,500+ visas sponsored' },
+    'twitter': { approx: 2000, note: 'H-1B sponsor - ~2,000+ visas sponsored' },
+    'x corp': { approx: 2000, note: 'H-1B sponsor - ~2,000+ visas sponsored' },
+    'jpmorgan': { approx: 8000, note: 'Major H-1B sponsor - ~8,000+ visas sponsored' },
+    'jp morgan': { approx: 8000, note: 'Major H-1B sponsor - ~8,000+ visas sponsored' },
+    'goldman sachs': { approx: 5000, note: 'H-1B sponsor - ~5,000+ visas sponsored' },
+    'morgan stanley': { approx: 4000, note: 'H-1B sponsor - ~4,000+ visas sponsored' },
+    'bank of america': { approx: 4000, note: 'H-1B sponsor - ~4,000+ visas sponsored' },
+    'capital one': { approx: 3000, note: 'H-1B sponsor - ~3,000+ visas sponsored' },
+    'disney': { approx: 2500, note: 'H-1B sponsor - ~2,500+ visas sponsored' },
+    'walt disney': { approx: 2500, note: 'H-1B sponsor - ~2,500+ visas sponsored' },
+    'bloomberg': { approx: 2500, note: 'H-1B sponsor - ~2,500+ visas sponsored' },
+    'spotify': { approx: 1000, note: 'H-1B sponsor - ~1,000+ visas sponsored' },
+    'snap': { approx: 1000, note: 'H-1B sponsor - ~1,000+ visas sponsored' },
+    'snapchat': { approx: 1000, note: 'H-1B sponsor - ~1,000+ visas sponsored' },
+    'lyft': { approx: 1000, note: 'H-1B sponsor - ~1,000+ visas sponsored' },
+    'doordash': { approx: 800, note: 'H-1B sponsor - ~800+ visas sponsored' },
+    'instacart': { approx: 500, note: 'H-1B sponsor - ~500+ visas sponsored' },
+    'palantir': { approx: 1500, note: 'H-1B sponsor - ~1,500+ visas sponsored' },
+    'databricks': { approx: 1000, note: 'H-1B sponsor - ~1,000+ visas sponsored' },
+    'snowflake': { approx: 800, note: 'H-1B sponsor - ~800+ visas sponsored' },
+    'twilio': { approx: 500, note: 'H-1B sponsor - ~500+ visas sponsored' },
+    'dropbox': { approx: 800, note: 'H-1B sponsor - ~800+ visas sponsored' },
+    'zoom': { approx: 600, note: 'H-1B sponsor - ~600+ visas sponsored' },
+    'servicenow': { approx: 1500, note: 'H-1B sponsor - ~1,500+ visas sponsored' },
+    'workday': { approx: 1200, note: 'H-1B sponsor - ~1,200+ visas sponsored' },
+    'vmware': { approx: 3000, note: 'H-1B sponsor - ~3,000+ visas sponsored' },
+    'hpe': { approx: 2000, note: 'H-1B sponsor - ~2,000+ visas sponsored' },
+    'hewlett packard': { approx: 2000, note: 'H-1B sponsor - ~2,000+ visas sponsored' },
+    'dell': { approx: 2500, note: 'H-1B sponsor - ~2,500+ visas sponsored' },
+    'paypal': { approx: 2000, note: 'H-1B sponsor - ~2,000+ visas sponsored' },
+    'visa inc': { approx: 1500, note: 'H-1B sponsor - ~1,500+ visas sponsored' },
+    'mastercard': { approx: 1200, note: 'H-1B sponsor - ~1,200+ visas sponsored' },
+    'american express': { approx: 1500, note: 'H-1B sponsor - ~1,500+ visas sponsored' },
+    'intuit': { approx: 1500, note: 'H-1B sponsor - ~1,500+ visas sponsored' },
+    'square': { approx: 800, note: 'H-1B sponsor - ~800+ visas sponsored' },
+    'block': { approx: 800, note: 'H-1B sponsor - ~800+ visas sponsored' },
+    'robinhood': { approx: 400, note: 'H-1B sponsor - ~400+ visas sponsored' },
+    'coinbase': { approx: 500, note: 'H-1B sponsor - ~500+ visas sponsored' },
+    'epic games': { approx: 600, note: 'H-1B sponsor - ~600+ visas sponsored' },
+    'electronic arts': { approx: 800, note: 'H-1B sponsor - ~800+ visas sponsored' },
+    'ea': { approx: 800, note: 'H-1B sponsor - ~800+ visas sponsored' },
+    'activision': { approx: 500, note: 'H-1B sponsor - ~500+ visas sponsored' },
+    'riot games': { approx: 400, note: 'H-1B sponsor - ~400+ visas sponsored' },
+    'pinterest': { approx: 800, note: 'H-1B sponsor - ~800+ visas sponsored' },
+    'reddit': { approx: 400, note: 'H-1B sponsor - ~400+ visas sponsored' },
+    'atlassian': { approx: 1000, note: 'H-1B sponsor - ~1,000+ visas sponsored' },
+    'github': { approx: 600, note: 'H-1B sponsor - ~600+ visas sponsored' },
+    'gitlab': { approx: 300, note: 'H-1B sponsor - ~300+ visas sponsored' },
+    'openai': { approx: 500, note: 'H-1B sponsor - ~500+ visas sponsored' },
+    'anthropic': { approx: 200, note: 'H-1B sponsor - ~200+ visas sponsored' }
+  };
+}
+
+// Get cached H1B data for a company
+async function getCachedH1B(companyName) {
+  try {
+    const result = await chrome.storage.local.get(['h1bCache']);
+    const cache = result.h1bCache || {};
+    const normalizedName = companyName.toLowerCase().trim();
+    const cached = cache[normalizedName];
+    
+    // Check if cache is still valid (7 days)
+    if (cached && Date.now() - cached.timestamp < 7 * 24 * 60 * 60 * 1000) {
+      return cached;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error reading H1B cache:', error);
+    return null;
+  }
+}
+
+// Cache H1B data for a company
+async function cacheCompanyH1B(companyName, h1bData) {
+  try {
+    const result = await chrome.storage.local.get(['h1bCache']);
+    const cache = result.h1bCache || {};
+    const normalizedName = companyName.toLowerCase().trim();
+    
+    cache[normalizedName] = {
+      ...h1bData,
+      h1bSponsors: h1bData.sponsors,
+      timestamp: Date.now()
+    };
+    
+    await chrome.storage.local.set({ h1bCache: cache });
+    console.log('H1B data cached for:', companyName);
+  } catch (error) {
+    console.error('Error caching H1B data:', error);
   }
 }
 
@@ -783,37 +1035,22 @@ async function verifyCompany(companyName, companyWebsite, jobTitle) {
       }
     }
     
-    // Check H1B sponsorship (with caching)
-    if (companyName) {
+    // Check H1B sponsorship using the new module (with caching)
+    // Validate company name is actually usable (not empty, not "Unknown", not too short)
+    const isValidCompany = companyName && 
+                           companyName.length >= 2 && 
+                           companyName.toLowerCase() !== 'unknown' && 
+                           companyName.toLowerCase() !== 'unknown company' &&
+                           companyName.toLowerCase() !== 'not provided';
+    
+    if (isValidCompany) {
       console.log(`Starting H1B check for: ${companyName}`);
       
-      // Try to get from cache first
-      try {
-        const cached = await getCachedH1B(companyName);
-        if (cached) {
-          console.log('H1B data loaded from cache:', cached);
-          verification.h1bSponsorship = {
-            sponsors: cached.h1bSponsors,
-            totalApplications: cached.totalApplications,
-            note: cached.note
-          };
-        } else {
-          // Fetch fresh data and cache it
-          verification.h1bSponsorship = await checkH1BSponsorship(companyName);
-          console.log('H1B check result:', verification.h1bSponsorship);
-          
-          if (verification.h1bSponsorship) {
-            await cacheCompanyH1B(companyName, verification.h1bSponsorship);
-            console.log('H1B data cached for:', companyName);
-          }
-        }
-      } catch (cacheError) {
-        console.error('H1B cache error:', cacheError);
-        // Fallback to direct check
-        verification.h1bSponsorship = await checkH1BSponsorship(companyName);
-      }
+      // Use the new H1B module for comprehensive lookup
+      verification.h1bSponsorship = await self.h1bModule.checkH1BSponsorship(companyName);
+      console.log('H1B check result:', verification.h1bSponsorship);
     } else {
-      console.log('Skipping H1B check - no company name');
+      console.log(`Skipping H1B check - invalid company name: "${companyName}"`);
     }
     
     return verification;
@@ -864,5 +1101,358 @@ async function cleanupCache() {
     console.error('Cache cleanup error:', error);
   }
 }
+
+// ==========================================
+// V3 FEATURES - AI & Cloud Sync Functions
+// ==========================================
+
+/**
+ * Generate AI cover letter
+ */
+async function generateCoverLetter(jobTitle, company, jobDescription, userSkills) {
+  try {
+    const authStatus = await auth.getAuthStatus();
+    if (!authStatus.isAuthenticated) {
+      return { success: false, error: 'not_authenticated', message: 'Please sign in to use AI features' };
+    }
+
+    const response = await fetch(`${CONFIG.BACKEND_URL}/api/v3/generate-cover-letter`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authStatus.accessToken}`
+      },
+      body: JSON.stringify({
+        jobTitle,
+        company,
+        jobDescription,
+        userSkills
+      })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return { success: false, error: data.error || 'Failed to generate cover letter' };
+    }
+
+    return { success: true, coverLetter: data.coverLetter };
+  } catch (error) {
+    console.error('Cover letter generation error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Analyze resume match with job description
+ */
+async function analyzeResumeMatch(resumeText, jobDescription) {
+  try {
+    const authStatus = await auth.getAuthStatus();
+    if (!authStatus.isAuthenticated) {
+      return { success: false, error: 'not_authenticated', message: 'Please sign in to use AI features' };
+    }
+
+    const response = await fetch(`${CONFIG.BACKEND_URL}/api/v3/analyze-resume`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authStatus.accessToken}`
+      },
+      body: JSON.stringify({
+        resumeText,
+        jobDescription
+      })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return { success: false, error: data.error || 'Failed to analyze resume' };
+    }
+
+    return { success: true, analysis: data.analysis };
+  } catch (error) {
+    console.error('Resume analysis error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Get interview preparation tips
+ */
+async function getInterviewPrep(jobTitle, company, industry) {
+  try {
+    const authStatus = await auth.getAuthStatus();
+    if (!authStatus.isAuthenticated) {
+      return { success: false, error: 'not_authenticated', message: 'Please sign in to use AI features' };
+    }
+
+    const response = await fetch(`${CONFIG.BACKEND_URL}/api/v3/interview-prep`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authStatus.accessToken}`
+      },
+      body: JSON.stringify({
+        jobTitle,
+        company,
+        industry
+      })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return { success: false, error: data.error || 'Failed to get interview prep' };
+    }
+
+    return { success: true, prep: data.prep };
+  } catch (error) {
+    console.error('Interview prep error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Chat with AI assistant
+ */
+async function chatWithAI(message, context = {}) {
+  try {
+    const authStatus = await auth.getAuthStatus();
+    if (!authStatus.isAuthenticated) {
+      return { success: false, error: 'not_authenticated', message: 'Please sign in to use AI features' };
+    }
+
+    const response = await fetch(`${CONFIG.BACKEND_URL}/api/v3/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authStatus.accessToken}`
+      },
+      body: JSON.stringify({
+        message,
+        context
+      })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return { success: false, error: data.error || 'Failed to get AI response' };
+    }
+
+    return { success: true, reply: data.reply };
+  } catch (error) {
+    console.error('AI chat error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Sync data to cloud
+ */
+async function syncToCloud(applications, reminders) {
+  try {
+    const authStatus = await auth.getAuthStatus();
+    if (!authStatus.isAuthenticated) {
+      return { success: false, error: 'not_authenticated', message: 'Please sign in to sync data' };
+    }
+
+    const response = await fetch(`${CONFIG.BACKEND_URL}/api/v3/sync`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authStatus.accessToken}`
+      },
+      body: JSON.stringify({
+        applications,
+        reminders,
+        lastSyncedAt: Date.now()
+      })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return { success: false, error: data.error || 'Sync failed' };
+    }
+
+    // Update local storage with synced data
+    await chrome.storage.local.set({
+      applications: data.applications,
+      reminders: data.reminders,
+      lastCloudSync: Date.now()
+    });
+
+    return { success: true, data };
+  } catch (error) {
+    console.error('Cloud sync error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Sync data from cloud
+ */
+async function syncFromCloud() {
+  try {
+    const authStatus = await auth.getAuthStatus();
+    if (!authStatus.isAuthenticated) {
+      return { success: false, error: 'not_authenticated', message: 'Please sign in to sync data' };
+    }
+
+    const response = await fetch(`${CONFIG.BACKEND_URL}/api/v3/sync`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${authStatus.accessToken}`
+      }
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return { success: false, error: data.error || 'Sync failed' };
+    }
+
+    // Update local storage with cloud data
+    await chrome.storage.local.set({
+      applications: data.applications || [],
+      reminders: data.reminders || [],
+      lastCloudSync: Date.now()
+    });
+
+    return { success: true, data };
+  } catch (error) {
+    console.error('Cloud sync error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Schedule a reminder using Chrome alarms API
+ */
+async function scheduleReminder(reminder) {
+  try {
+    const { id, title, date, time, type } = reminder;
+    
+    // Calculate alarm time
+    const alarmTime = new Date(`${date}T${time}`).getTime();
+    const now = Date.now();
+    
+    if (alarmTime <= now) {
+      return { success: false, error: 'Reminder time must be in the future' };
+    }
+
+    // Create Chrome alarm
+    const alarmName = `reminder_${id}`;
+    await chrome.alarms.create(alarmName, {
+      when: alarmTime
+    });
+
+    // Store reminder in local storage
+    const result = await chrome.storage.local.get(['reminders']);
+    const reminders = result.reminders || [];
+    
+    // Check if reminder already exists
+    const existingIndex = reminders.findIndex(r => r.id === id);
+    if (existingIndex >= 0) {
+      reminders[existingIndex] = reminder;
+    } else {
+      reminders.push(reminder);
+    }
+    
+    await chrome.storage.local.set({ reminders });
+
+    console.log('Reminder scheduled:', alarmName, 'for', new Date(alarmTime).toLocaleString());
+    return { success: true, reminder };
+  } catch (error) {
+    console.error('Schedule reminder error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Cancel a scheduled reminder
+ */
+async function cancelReminder(reminderId) {
+  try {
+    const alarmName = `reminder_${reminderId}`;
+    await chrome.alarms.clear(alarmName);
+
+    // Remove from local storage
+    const result = await chrome.storage.local.get(['reminders']);
+    const reminders = result.reminders || [];
+    const filtered = reminders.filter(r => r.id !== reminderId);
+    await chrome.storage.local.set({ reminders: filtered });
+
+    console.log('Reminder cancelled:', alarmName);
+    return { success: true };
+  } catch (error) {
+    console.error('Cancel reminder error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Get all reminders
+ */
+async function getReminders() {
+  try {
+    const result = await chrome.storage.local.get(['reminders']);
+    return { success: true, reminders: result.reminders || [] };
+  } catch (error) {
+    console.error('Get reminders error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Listen for alarm events (reminders)
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name.startsWith('reminder_')) {
+    const reminderId = alarm.name.replace('reminder_', '');
+    
+    // Get reminder details
+    const result = await chrome.storage.local.get(['reminders']);
+    const reminders = result.reminders || [];
+    const reminder = reminders.find(r => r.id === reminderId);
+    
+    if (reminder) {
+      // Show notification
+      chrome.notifications.create(`notification_${reminderId}`, {
+        type: 'basic',
+        iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+        title: '📅 ApplySafe Reminder',
+        message: reminder.title,
+        priority: 2,
+        buttons: [
+          { title: 'View Dashboard' },
+          { title: 'Dismiss' }
+        ]
+      });
+      
+      // Mark reminder as triggered
+      const updatedReminders = reminders.map(r => {
+        if (r.id === reminderId) {
+          return { ...r, triggered: true, triggeredAt: Date.now() };
+        }
+        return r;
+      });
+      await chrome.storage.local.set({ reminders: updatedReminders });
+    }
+  }
+});
+
+// Handle notification button clicks
+chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+  if (notificationId.startsWith('notification_')) {
+    if (buttonIndex === 0) {
+      // Open dashboard
+      chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/dashboard.html') });
+    }
+    // Dismiss notification
+    chrome.notifications.clear(notificationId);
+  }
+});
 
 console.log('ApplySafe background service worker loaded');

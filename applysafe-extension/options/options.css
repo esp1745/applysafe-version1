@@ -322,6 +322,44 @@ body {
   margin-bottom: 16px;
 }
 
+/* AI Status Info */
+.ai-status-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.ai-status-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ai-status-icon.success {
+  background-color: var(--color-safe-light);
+  color: var(--color-safe);
+}
+
+.ai-status-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.ai-status-text h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-gray-800);
+  margin-bottom: 8px;
+}
+
+.ai-status-text .card-description {
+  margin-bottom: 0;
+}
+
 .link {
   color: var(--color-primary);
   text-decoration: none;

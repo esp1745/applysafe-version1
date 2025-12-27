@@ -28,10 +28,7 @@ const anthropic = process.env.ANTHROPIC_API_KEY
 
 // Connect to MongoDB Atlas
 const mongoUri = process.env.MONGODB_URI || 'mongodb+srv://esparance7_db_user:T1qUNMo1dciOMjEi@cluster0.pgium5y.mongodb.net/applysafe?retryWrites=true&w=majority';
-mongoose.connect(mongoUri, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-}).then(() => {
+mongoose.connect(mongoUri).then(() => {
   console.log('Connected to MongoDB Atlas');
 }).catch((err) => {
   console.error('MongoDB connection error:', err);

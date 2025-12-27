@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ApplySafe - AI Job Scam Detector",
-  "version": "1.0.0",
-  "description": "AI-powered job scam detection with H1B verification. Analyzes postings in real-time to identify red flags and keep you safe.",
+  "version": "3.0.0",
+  "description": "AI-powered job scam detection with H1B verification, application tracking, cover letter generator, and cloud sync. Protect your job search.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -25,8 +25,16 @@
     "tabs",
     "alarms",
     "notifications",
-    "contextMenus"
+    "contextMenus",
+    "identity"
   ],
+  "oauth2": {
+    "client_id": "683690946308-jfqmi19s9pgtk5fcaq8l3cpfg39o3cih.apps.googleusercontent.com",
+    "scopes": [
+      "profile",
+      "email"
+    ]
+  },
   "host_permissions": [
     "https://www.linkedin.com/*",
     "https://linkedin.com/*",
@@ -49,7 +57,22 @@
     "https://careers.google.com/*",
     "https://www.google.com/about/careers/*",
     "https://api.anthropic.com/*",
-    "https://h1bdata.info/*"
+    "https://h1bdata.info/*",
+    "https://*.greenhouse.io/*",
+    "https://*.lever.co/*",
+    "https://*.workday.com/*",
+    "https://*.myworkdayjobs.com/*",
+    "https://*.bamboohr.com/*",
+    "https://*.icims.com/*",
+    "https://*.smartrecruiters.com/*",
+    "https://*.jobvite.com/*",
+    "https://*.taleo.net/*",
+    "https://*.breezy.hr/*",
+    "https://*.ashbyhq.com/*",
+    "https://*.recruitee.com/*",
+    "https://applysafe-version1.vercel.app/*",
+    "https://*.vercel.app/*",
+    "http://localhost:3000/*"
   ],
   "background": {
     "service_worker": "background/service-worker.js"
@@ -76,7 +99,21 @@
         "https://weworkremotely.com/remote-jobs/*",
         "https://remoteok.com/*",
         "https://careers.google.com/jobs/*",
-        "https://www.google.com/about/careers/applications/jobs/*"
+        "https://www.google.com/about/careers/applications/jobs/*",
+        "https://*.greenhouse.io/jobs/*",
+        "https://boards.greenhouse.io/*",
+        "https://*.lever.co/*",
+        "https://jobs.lever.co/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.wd5.myworkdayjobs.com/*",
+        "https://*.bamboohr.com/careers/*",
+        "https://*.icims.com/jobs/*",
+        "https://*.smartrecruiters.com/*/jobs/*",
+        "https://*.jobvite.com/*",
+        "https://*.taleo.net/*",
+        "https://*.breezy.hr/*",
+        "https://*.ashbyhq.com/*",
+        "https://*.recruitee.com/*"
       ],
       "js": ["content/content.js"],
       "css": ["content/content.css"],
@@ -86,7 +123,7 @@
   "options_page": "options/options.html",
   "web_accessible_resources": [
     {
-      "resources": ["icons/*", "assets/*"],
+      "resources": ["icons/*", "assets/*", "dashboard/*"],
       "matches": ["<all_urls>"]
     }
   ],

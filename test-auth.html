@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ApplySafe OAuth Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    .section {
+      margin: 20px 0;
+      padding: 20px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      cursor: pointer;
+      background: #4285F4;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
+    button:hover {
+      background: #357ae8;
+    }
+    pre {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    .success { color: #10B981; }
+    .error { color: #EF4444; }
+  </style>
+</head>
+<body>
+  <h1>ApplySafe OAuth Integration Test</h1>
+  
+  <div class="section">
+    <h2>Extension Auth System</h2>
+    <p>This page tests the OAuth authentication flow with the extension.</p>
+    
+    <button onclick="testExtensionAuth()">Test Extension Auth</button>
+    <button onclick="testSignIn()">Test Sign In</button>
+    <button onclick="testSignOut()">Test Sign Out</button>
+    <button onclick="testUsageCheck()">Test Usage Check</button>
+    
+    <div id="result"></div>
+  </div>
+
+  <div class="section">
+    <h2>Backend API Test</h2>
+    <p>Backend running on: http://localhost:3001</p>
+    
+    <button onclick="testBackendHealth()">Test Health Check</button>
+    <button onclick="testProfileAPI()">Test Profile API</button>
+    
+    <div id="backendResult"></div>
+  </div>
+
+  <script>
+    const API_URL = 'http://localhost:3001';
+    let currentToken = null;
+
+    function showResult(elementId, data, isError = false) {
+      const element = document.getElementById(elementId);
+      element.innerHTML = `
+        <p class="${isError ? 'error' : 'success'}">${isError ? '❌ Error' : '✅ Success'}</p>
+        <pre>${JSON.stringify(data, null, 2)}</pre>
+      `;
+    }
+
+    async function testExtensionAuth() {
+      try {
+        const response = await chrome.runtime.sendMessage({ action: 'getAuthStatus' });
+        showResult('result', response);
+      } catch (error) {
+        showResult('result', { error: error.message }, true);
+      }
+    }
+
+    async function testSignIn() {
+      try {
+        const response = await chrome.runtime.sendMessage({ action: 'signInWithGoogle' });
+        if (response.success && response.token) {
+          currentToken = response.token;
+        }
+        showResult('result', response);
+      } catch (error) {
+        showResult('result', { error: error.message }, true);
+      }
+    }
+
+    async function testSignOut() {
+      try {
+        const response = await chrome.runtime.sendMessage({ action: 'signOut' });
+        currentToken = null;
+        showResult('result', response);
+      } catch (error) {
+        showResult('result', { error: error.message }, true);
+      }
+    }
+
+    async function testUsageCheck() {
+      try {
+        const response = await chrome.runtime.sendMessage({ action: 'canUseFeature' });
+        showResult('result', response);
+      } catch (error) {
+        showResult('result', { error: error.message }, true);
+      }
+    }
+
+    async function testBackendHealth() {
+      try {
+        const response = await fetch(`${API_URL}/health`);
+        const data = await response.json();
+        showResult('backendResult', data);
+      } catch (error) {
+        showResult('backendResult', { error: error.message }, true);
+      }
+    }
+
+    async function testProfileAPI() {
+      if (!currentToken) {
+        showResult('backendResult', { error: 'Please sign in first to get a token' }, true);
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_URL}/api/user/profile`, {
+          headers: {
+            'Authorization': `Bearer ${currentToken}`
+          }
+        });
+        const data = await response.json();
+        showResult('backendResult', data);
+      } catch (error) {
+        showResult('backendResult', { error: error.message }, true);
+      }
+    }
+  </script>
+</body>
+</html>

@@ -39,9 +39,6 @@ const elements = {
   addWhitelist: document.getElementById('addWhitelist'),
   
   // Settings
-  apiKey: document.getElementById('apiKey'),
-  toggleApiKey: document.getElementById('toggleApiKey'),
-  saveApiKey: document.getElementById('saveApiKey'),
   autoAnalyze: document.getElementById('autoAnalyze'),
   showBadges: document.getElementById('showBadges'),
   notifyHighRisk: document.getElementById('notifyHighRisk'),
@@ -105,8 +102,6 @@ function setupEventListeners() {
   });
   
   // Settings
-  elements.toggleApiKey.addEventListener('click', toggleApiKeyVisibility);
-  elements.saveApiKey.addEventListener('click', saveApiKey);
   elements.autoAnalyze.addEventListener('change', saveSettings);
   elements.showBadges.addEventListener('change', saveSettings);
   elements.notifyHighRisk.addEventListener('change', saveSettings);
@@ -187,7 +182,6 @@ async function loadAllData() {
     
     // Load settings
     const settings = result.settings || {};
-    elements.apiKey.value = settings.apiKey || '';
     elements.autoAnalyze.checked = settings.autoAnalyze !== false;
     elements.showBadges.checked = settings.showBadges !== false;
     elements.notifyHighRisk.checked = settings.notifyHighRisk !== false;
@@ -402,26 +396,6 @@ window.removeFromWhitelist = async function(domain) {
 };
 
 // Settings
-function toggleApiKeyVisibility() {
-  const input = elements.apiKey;
-  input.type = input.type === 'password' ? 'text' : 'password';
-}
-
-async function saveApiKey() {
-  try {
-    const apiKey = elements.apiKey.value.trim();
-    
-    await chrome.runtime.sendMessage({
-      action: 'setApiKey',
-      apiKey: apiKey
-    });
-    
-    showToast('API key saved', 'success');
-  } catch (error) {
-    showToast('Failed to save API key', 'error');
-  }
-}
-
 async function saveSettings() {
   try {
     const result = await chrome.storage.local.get(['settings']);
