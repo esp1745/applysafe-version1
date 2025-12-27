@@ -4,19 +4,216 @@ require('dotenv').config(); // Load .env FIRST
 const express = require('express');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library');
+const mongoose = require('mongoose');
+const Anthropic = require('@anthropic-ai/sdk');
+const User = require('./models/User');
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-// Store license keys in memory (use database in production)
+// JWT secret
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
+
+// Google OAuth client
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// Anthropic Claude client (API key stored securely in environment)
+const anthropic = process.env.ANTHROPIC_API_KEY 
+  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  : null;
+
+// Connect to MongoDB Atlas
+const mongoUri = process.env.MONGODB_URI || 'mongodb+srv://esparance7_db_user:T1qUNMo1dciOMjEi@cluster0.pgium5y.mongodb.net/applysafe?retryWrites=true&w=majority';
+mongoose.connect(mongoUri, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+}).then(() => {
+  console.log('Connected to MongoDB Atlas');
+}).catch((err) => {
+  console.error('MongoDB connection error:', err);
+});
+
+// Store license keys and users in memory (use database in production)
 const licenses = new Map();
+const users = new Map();
+const userUsage = new Map();
+
+// =====================================
+// CLAUDE AI ANALYSIS PROXY ENDPOINT
+// =====================================
+
+// Analyze job posting using Claude AI
+app.post('/api/analyze-job', async (req, res) => {
+  try {
+    const { jobData, prompt } = req.body;
+    
+    // Check if Anthropic is configured
+    if (!anthropic) {
+      console.log('Anthropic API not configured, returning fallback');
+      return res.status(503).json({ 
+        error: 'AI analysis not available',
+        fallback: true,
+        message: 'Please use heuristic analysis'
+      });
+    }
+    
+    // Validate request
+    if (!jobData && !prompt) {
+      return res.status(400).json({ error: 'Missing jobData or prompt' });
+    }
+    
+    // Rate limiting check (optional - can be enhanced)
+    // For now, we'll rely on subscription checks
+    
+    console.log('Processing AI analysis request for:', jobData?.title || 'custom prompt');
+    
+    // Call Claude API
+    const message = await anthropic.messages.create({
+      model: 'claude-3-haiku-20240307',
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: prompt || buildAnalysisPrompt(jobData)
+      }]
+    });
+    
+    // Extract response
+    const responseText = message.content[0].text;
+    
+    console.log('AI analysis completed successfully');
+    
+    // Parse the JSON response from Claude
+    let analysis;
+    try {
+      // Extract JSON from the response (Claude might include extra text)
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        analysis = JSON.parse(jsonMatch[0]);
+        // Add timestamp
+        analysis.timestamp = Date.now();
+        analysis.aiAnalyzed = true;
+      } else {
+        throw new Error('No JSON found in response');
+      }
+    } catch (parseError) {
+      console.error('Failed to parse AI response:', parseError.message);
+      // Return a basic structure if parsing fails
+      analysis = {
+        riskScore: 30,
+        jobTitle: jobData.title || 'Unknown',
+        company: jobData.company || 'Unknown',
+        redFlags: ['Unable to fully analyze posting'],
+        positiveIndicators: [],
+        explanation: responseText.substring(0, 200),
+        timestamp: Date.now(),
+        aiAnalyzed: false
+      };
+    }
+    
+    res.json({
+      success: true,
+      analysis: analysis,
+      usage: {
+        input_tokens: message.usage?.input_tokens,
+        output_tokens: message.usage?.output_tokens
+      }
+    });
+    
+  } catch (error) {
+    console.error('AI analysis error:', error.message);
+    
+    // Handle specific Anthropic errors
+    if (error.status === 429) {
+      return res.status(429).json({ error: 'Rate limit exceeded', fallback: true });
+    }
+    if (error.status === 401) {
+      return res.status(500).json({ error: 'AI service configuration error', fallback: true });
+    }
+    
+    res.status(500).json({ 
+      error: error.message || 'AI analysis failed',
+      fallback: true
+    });
+  }
+});
+
+// Helper function to build analysis prompt
+function buildAnalysisPrompt(jobData) {
+  return `You are an expert job scam detector. Analyze this job posting and provide a balanced risk assessment.
+
+JOB POSTING DATA:
+Title: ${jobData.title || 'Not provided'}
+Company: ${jobData.company || 'Not provided'}
+Location: ${jobData.location || 'Not provided'}
+Salary: ${jobData.salary || 'Not provided'}
+Description: ${(jobData.description || '').substring(0, 3000)}
+
+Contact Emails Found: ${(jobData.contactEmail || []).join(', ') || 'None'}
+Company Domain: ${jobData.companyDomain || 'Unknown'}
+
+SCORING GUIDELINES:
+- Well-known companies (Fortune 500, major tech, consulting firms like TCS, Infosys, Accenture, Google, Amazon, Microsoft, etc.) should score 5-20 unless there are CRITICAL red flags
+- Missing salary is NORMAL for many legitimate jobs - do NOT heavily penalize this
+- Only flag "vague responsibilities" if truly unusable, not just brief
+
+CRITICAL SCAM INDICATORS (High Risk - Score 60+):
+1. Requests for upfront payment, fees, or "investment"
+2. Requests for personal banking info or SSN before hiring
+3. "Too good to be true" salary/benefits for entry-level work
+4. Generic email domains (gmail, yahoo) for business communication from supposedly large companies
+5. No verifiable company information or website
+6. Pressure tactics ("act now", "limited positions")
+7. Work-from-home schemes promising unrealistic income
+
+MINOR CONCERNS (Low impact on score):
+1. Missing salary information (common and normal)
+2. Brief job description (not necessarily bad)
+3. Standard corporate language
+
+POSITIVE INDICATORS (Significantly reduce risk):
+1. Well-known, established company (-20 to -30 points)
+2. Verifiable company with working website
+3. Professional email domain matching company
+4. Clear job requirements
+5. Standard interview process mentioned
+6. Company has H-1B sponsorship history (major trust signal)
+
+IMPORTANT: Avoid contradictions! If salary is missing, do NOT also say "reasonable salary". Only include indicators you can actually verify from the posting.
+
+RESPOND IN THIS EXACT JSON FORMAT:
+{
+  "riskScore": <number 0-100>,
+  "jobTitle": "<extracted job title>",
+  "company": "<extracted company name>",
+  "redFlags": ["<only include if there are genuine concerns>"],
+  "positiveIndicators": ["<only include what you can verify from the posting>"],
+  "explanation": "<2-3 sentence summary>"
+}
+
+Most legitimate postings from known companies should score 5-25. Reserve 30+ for actual concerns.`;
+}
+
+// Health check endpoint for AI service
+app.get('/api/ai-status', (req, res) => {
+  res.json({
+    aiEnabled: !!anthropic,
+    model: 'claude-3-haiku-20240307',
+    status: anthropic ? 'ready' : 'not configured'
+  });
+});
+
+// =====================================
+// STRIPE & AUTH ENDPOINTS
+// =====================================
 
 // Create Stripe Checkout Session
 app.post('/api/create-checkout', async (req, res) => {
   try {
-    const { priceId, customerId } = req.body;
+    const { priceId, customerId, customerEmail } = req.body;
     
     // Generate unique session ID for tracking
     const clientReferenceId = `ext_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -31,25 +228,43 @@ app.post('/api/create-checkout', async (req, res) => {
           quantity: 1,
         },
       ],
-      success_url: `https://applysafe-version1.vercel.app/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `https://applysafe-version1.vercel.app/cancel`,
+      success_url: `https://applysafe-version1.vercel.app/api/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `https://applysafe-version1.vercel.app/api/cancel`,
       client_reference_id: clientReferenceId,
       subscription_data: {
         trial_period_days: 7, // 7-day free trial
+      },
+      // Disable saved payment methods to prevent showing previous customer's info
+      saved_payment_method_options: {
+        payment_method_save: 'disabled',
       },
     };
     
     // Only add customer if it exists (not null/undefined/empty)
     if (customerId && customerId.trim()) {
       sessionConfig.customer = customerId;
+    } else if (customerEmail && customerEmail.trim()) {
+      // If no customer ID but email provided, use email
+      sessionConfig.customer_email = customerEmail;
     }
     
     const session = await stripe.checkout.sessions.create(sessionConfig);
 
     res.json({ url: session.url, sessionId: session.id, clientReferenceId });
   } catch (error) {
-    console.error('Checkout error:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Checkout error details:', {
+      message: error.message,
+      type: error.type,
+      code: error.code,
+      stack: error.stack,
+      stripeConfigured: !!process.env.STRIPE_SECRET_KEY,
+      priceId: req.body.priceId || process.env.STRIPE_PRICE_ID
+    });
+    res.status(500).json({ 
+      error: error.message,
+      details: error.type || 'Unknown error',
+      configured: !!process.env.STRIPE_SECRET_KEY
+    });
   }
 });
 
@@ -101,9 +316,10 @@ app.post('/api/validate-license', async (req, res) => {
 // Get Subscription Status
 app.post('/api/subscription-status', async (req, res) => {
   try {
-    const { customerId, licenseKey } = req.body;
+    const { customerId, licenseKey, email } = req.body;
     
     let customer = customerId;
+    let userFromDb = null;
     
     // If license key provided, get customer from license
     if (licenseKey && !customer) {
@@ -111,7 +327,45 @@ app.post('/api/subscription-status', async (req, res) => {
       customer = licenseData?.customerId;
     }
     
+    // If no customer ID but email provided, look up user in MongoDB
+    if (!customer && email) {
+      try {
+        userFromDb = await User.findOne({ email });
+        if (userFromDb && userFromDb.stripeCustomerId) {
+          customer = userFromDb.stripeCustomerId;
+          console.log('Found customer by email:', email, customer);
+        } else if (userFromDb && userFromDb.subscriptionStatus === 'active') {
+          // User marked active in DB but no Stripe customer - return active
+          console.log('User marked active in DB without Stripe customer:', email);
+          return res.json({
+            status: 'active',
+            planName: 'Pro',
+            renewsAt: null,
+            cancelsAt: null,
+            stripeCustomerId: userFromDb.stripeCustomerId
+          });
+        }
+      } catch (dbError) {
+        console.error('MongoDB lookup error:', dbError.message);
+        // Continue without DB lookup
+      }
+    }
+    
+    // If still no customer but have email, try to find Stripe customer directly by email
+    if (!customer && email) {
+      try {
+        const customers = await stripe.customers.list({ email: email, limit: 1 });
+        if (customers.data.length > 0) {
+          customer = customers.data[0].id;
+          console.log('Found Stripe customer by email directly:', email, customer);
+        }
+      } catch (stripeError) {
+        console.error('Stripe customer lookup error:', stripeError.message);
+      }
+    }
+    
     if (!customer) {
+      console.log('No customer found for subscription-status:', { customerId, email });
       return res.json({ status: 'inactive' });
     }
     
@@ -123,16 +377,20 @@ app.post('/api/subscription-status', async (req, res) => {
     });
     
     if (subscriptions.data.length === 0) {
-      return res.json({ status: 'inactive' });
+      return res.json({ status: 'inactive', stripeCustomerId: customer });
     }
     
     const subscription = subscriptions.data[0];
     
+    // Treat 'trialing' as 'active' for extension compatibility
+    let mappedStatus = subscription.status;
+    if (mappedStatus === 'trialing') mappedStatus = 'active';
     res.json({
-      status: subscription.status, // active, canceled, past_due, etc.
+      status: mappedStatus, // active, canceled, past_due, etc.
       planName: 'Pro',
       renewsAt: subscription.current_period_end * 1000,
       cancelsAt: subscription.cancel_at ? subscription.cancel_at * 1000 : null,
+      stripeCustomerId: customer
     });
   } catch (error) {
     console.error('Status error:', error);
@@ -202,6 +460,20 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
       });
       
       console.log('License created:', licenseKey);
+
+      // Update user subscription status to active in MongoDB
+      let user = await User.findOne({ stripeCustomerId: session.customer });
+      if (!user && session.customer_email) {
+        user = await User.findOne({ email: session.customer_email });
+      }
+      if (user) {
+        user.subscriptionStatus = 'active';
+        user.stripeCustomerId = session.customer;
+        await user.save();
+        console.log('User subscription activated:', user.email);
+      } else {
+        console.warn('No user found to activate for customer:', session.customer, session.customer_email);
+      }
       break;
       
     case 'customer.subscription.updated':
@@ -489,9 +761,843 @@ app.get('/cancel', (req, res) => {
   `);
 });
 
+// ============================================
+// Authentication Endpoints
+// ============================================
+
+// Verify Google token and create/login user
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const { googleToken, email, name, picture } = req.body;
+
+    // Verify Google token - try as ID token first, then as access token
+    let googleId;
+    let verifiedEmail = email;
+    
+    try {
+      // Try verifying as ID token first
+      const ticket = await googleClient.verifyIdToken({
+        idToken: googleToken,
+        audience: process.env.GOOGLE_CLIENT_ID
+      });
+      const payload = ticket.getPayload();
+      googleId = payload['sub'];
+      verifiedEmail = payload['email'];
+    } catch (idTokenError) {
+      // If ID token verification fails, try as access token
+      console.log('ID token verification failed, trying as access token...');
+      try {
+        const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+          headers: { Authorization: `Bearer ${googleToken}` }
+        });
+        
+        if (!userInfoResponse.ok) {
+          throw new Error('Failed to verify access token');
+        }
+        
+        const userInfo = await userInfoResponse.json();
+        googleId = userInfo.id;
+        verifiedEmail = userInfo.email;
+        
+        // Verify the email matches what was sent
+        if (verifiedEmail !== email) {
+          throw new Error('Email mismatch');
+        }
+        
+        console.log('Access token verified successfully for:', verifiedEmail);
+      } catch (accessTokenError) {
+        console.error('Both token verification methods failed');
+        throw new Error('Invalid token');
+      }
+    }
+
+    // Find or create user in MongoDB
+    let user = await User.findOne({ googleId });
+    if (!user) {
+      // If not found by googleId, try by email (for users who signed up before GoogleId was stored)
+      user = await User.findOne({ email });
+    }
+
+    if (!user) {
+      // Create new user
+      user = new User({
+        googleId,
+        email,
+        name,
+        picture,
+        subscriptionStatus: 'free',
+        trialStartDate: new Date(),
+        createdAt: new Date()
+      });
+      await user.save();
+      console.log('New user created:', email);
+    } else {
+      // Update user info if changed
+      let updated = false;
+      if (user.name !== name) { user.name = name; updated = true; }
+      if (user.picture !== picture) { user.picture = picture; updated = true; }
+      if (user.email !== email) { user.email = email; updated = true; }
+      if (!user.googleId) { user.googleId = googleId; updated = true; }
+      if (updated) await user.save();
+      console.log('User logged in:', email);
+    }
+
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user._id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.json({
+      success: true,
+      userId: user._id,
+      token,
+      subscriptionStatus: user.subscriptionStatus,
+      trialInfo: getUserTrialInfo(user)
+    });
+
+  } catch (error) {
+    console.error('Auth error:', error);
+    res.status(401).json({ error: 'Authentication failed' });
+  }
+});
+
+// Middleware to verify JWT token
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(403).json({ error: 'Invalid token' });
+    }
+    req.userId = decoded.userId;
+    req.userEmail = decoded.email;
+    next();
+  });
+}
+
+// Check if user can use a feature
+app.post('/api/usage/check', authenticateToken, async (req, res) => {
+  try {
+    const { feature } = req.body;
+    const userId = req.userId;
+
+    const user = users.get(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Pro users have unlimited access
+    if (user.subscriptionStatus === 'active' || user.subscriptionStatus === 'pro') {
+      await incrementUserUsage(userId);
+      return res.json({
+        allowed: true,
+        reason: 'pro_subscription',
+        scansLeft: -1, // unlimited
+        isPro: true
+      });
+    }
+
+    // Check trial status
+    const trialInfo = getUserTrialInfo(user);
+    if (!trialInfo.isTrialActive) {
+      return res.json({
+        allowed: false,
+        reason: 'trial_expired',
+        message: 'Your 7-day trial has expired. Upgrade to Pro for unlimited scans.',
+        daysLeft: 0,
+        scansLeft: 0
+      });
+    }
+
+    // Check daily limit
+    const usage = userUsage.get(userId);
+    const today = new Date().toDateString();
+    
+    if (usage.lastScanDate !== today) {
+      // Reset daily count
+      usage.dailyScans = 0;
+      usage.lastScanDate = today;
+    }
+
+    if (usage.dailyScans >= 10) {
+      return res.json({
+        allowed: false,
+        reason: 'daily_limit_reached',
+        message: 'Daily limit of 10 scans reached. Upgrade to Pro or try again tomorrow.',
+        scansLeft: 0,
+        daysLeft: trialInfo.daysLeft
+      });
+    }
+
+    // Allow usage and increment count
+    usage.dailyScans++;
+    usage.totalScans++;
+
+    res.json({
+      allowed: true,
+      reason: 'free_trial',
+      scansLeft: 10 - usage.dailyScans,
+      daysLeft: trialInfo.daysLeft,
+      isPro: false,
+      scansToday: usage.dailyScans
+    });
+
+  } catch (error) {
+    console.error('Usage check error:', error);
+    res.status(500).json({ error: 'Failed to check usage' });
+  }
+});
+
+// Get user profile and usage stats
+app.get('/api/user/profile', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const user = users.get(userId);
+    const usage = userUsage.get(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const trialInfo = getUserTrialInfo(user);
+
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        picture: user.picture
+      },
+      subscription: {
+        status: user.subscriptionStatus,
+        customerId: user.customerId
+      },
+      trial: trialInfo,
+      usage: {
+        today: usage.dailyScans,
+        total: usage.totalScans
+      }
+    });
+
+  } catch (error) {
+    console.error('Profile error:', error);
+    res.status(500).json({ error: 'Failed to get profile' });
+  }
+});
+
+// Upgrade user to Pro
+app.post('/api/user/upgrade', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const user = users.get(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Create Stripe checkout session
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      payment_method_types: ['card'],
+      line_items: [{
+        price: process.env.STRIPE_PRICE_ID,
+        quantity: 1,
+      }],
+      success_url: `https://applysafe-version1.vercel.app/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `https://applysafe-version1.vercel.app/cancel`,
+      client_reference_id: userId,
+      customer_email: user.email,
+      metadata: {
+        userId: userId
+      }
+    });
+
+    res.json({
+      success: true,
+      checkoutUrl: session.url,
+      sessionId: session.id
+    });
+
+  } catch (error) {
+    console.error('Upgrade error:', error);
+    res.status(500).json({ error: 'Failed to create checkout session' });
+  }
+});
+
+// Helper functions for user management
+function getUserTrialInfo(user) {
+  const trialStartDate = user.trialStartDate || user.createdAt;
+  const daysElapsed = Math.floor((Date.now() - trialStartDate) / (1000 * 60 * 60 * 24));
+  const isTrialActive = daysElapsed < 7;
+
+  return {
+    isTrialActive,
+    daysLeft: Math.max(0, 7 - daysElapsed),
+    trialStartDate
+  };
+}
+
+async function incrementUserUsage(userId) {
+  const usage = userUsage.get(userId);
+  if (usage) {
+    usage.totalScans++;
+  }
+}
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
+});
+
+// Debug endpoint to check configuration
+app.get('/api/debug', (req, res) => {
+  res.json({
+    stripeConfigured: !!process.env.STRIPE_SECRET_KEY,
+    stripeKeyPrefix: process.env.STRIPE_SECRET_KEY?.substring(0, 10),
+    priceIdConfigured: !!process.env.STRIPE_PRICE_ID,
+    priceId: process.env.STRIPE_PRICE_ID,
+    nodeEnv: process.env.NODE_ENV
+  });
+});
+
+// Success redirect - shows success page
+app.get('/api/success', (req, res) => {
+  const sessionId = req.query.session_id;
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Payment Successful - ApplySafe</title>
+      <style>
+        body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: linear-gradient(135deg, #10B981, #059669); }
+        .container { background: white; padding: 40px; border-radius: 12px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.2); max-width: 500px; }
+        h1 { color: #10B981; margin-bottom: 20px; }
+        p { color: #666; line-height: 1.6; }
+        .checkmark { font-size: 64px; color: #10B981; margin-bottom: 20px; }
+        button { background: #10B981; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; margin-top: 20px; }
+        button:hover { background: #059669; }
+        .ext-link { background: #059669; margin-left: 10px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="checkmark">✓</div>
+        <h1>Payment Successful!</h1>
+        <p>Welcome to ApplySafe Pro! Your subscription is now active.</p>
+        <p>You now have unlimited scans and access to all premium features.</p>
+        <p><small>Session ID: ${sessionId}</small></p>
+        <button onclick="window.close()">Close This Tab</button>
+        <div style="margin-top: 24px;">
+          <strong>Next Steps:</strong>
+          <p style="margin: 12px 0 0 0;">Your payment was successful!<br>
+          Please return to the <b>ApplySafe extension popup</b> in your browser to access your Pro features.</p>
+          <p style="font-size: 0.95em; color: #666; margin-top: 10px;">Click the ApplySafe icon in your browser toolbar to open the extension.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
+// Cancel redirect
+app.get('/api/cancel', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Payment Cancelled - ApplySafe</title>
+      <style>
+        body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f3f4f6; }
+        .container { background: white; padding: 40px; border-radius: 12px; text-center; box-shadow: 0 4px 20px rgba(0,0,0,0.1); max-width: 500px; }
+        h1 { color: #ef4444; margin-bottom: 20px; }
+        p { color: #666; line-height: 1.6; }
+        button { background: #6b7280; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; margin-top: 20px; }
+        button:hover { background: #4b5563; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>Payment Cancelled</h1>
+        <p>Your payment was cancelled. No charges were made.</p>
+        <p>You can try again anytime from the ApplySafe extension.</p>
+        <button onclick="window.close()">Close This Tab</button>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
+// =====================================
+// V3 API ENDPOINTS - Cloud Sync & AI Features
+// =====================================
+
+// Middleware to verify user authentication
+const verifyUser = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing authorization header' });
+    }
+    
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    
+    const user = await User.findOne({ email: decoded.email });
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+    
+    req.user = user;
+    next();
+  } catch (error) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
+// Sync user data (applications & reminders)
+app.post('/api/v3/sync', verifyUser, async (req, res) => {
+  try {
+    const { applications, reminders, lastSync } = req.body;
+    const userId = req.user._id;
+    
+    // Get or create user data document
+    let userData = await mongoose.connection.db.collection('userdata').findOne({ userId });
+    
+    if (!userData) {
+      // First sync - save everything
+      await mongoose.connection.db.collection('userdata').insertOne({
+        userId,
+        applications: applications || [],
+        reminders: reminders || [],
+        lastSync: new Date()
+      });
+      
+      return res.json({
+        success: true,
+        message: 'Initial sync complete',
+        data: { applications, reminders }
+      });
+    }
+    
+    // Merge data - prefer newer items
+    const mergedApps = mergeArrays(userData.applications || [], applications || [], 'id');
+    const mergedReminders = mergeArrays(userData.reminders || [], reminders || [], 'id');
+    
+    // Update database
+    await mongoose.connection.db.collection('userdata').updateOne(
+      { userId },
+      {
+        $set: {
+          applications: mergedApps,
+          reminders: mergedReminders,
+          lastSync: new Date()
+        }
+      }
+    );
+    
+    res.json({
+      success: true,
+      message: 'Sync complete',
+      data: {
+        applications: mergedApps,
+        reminders: mergedReminders
+      }
+    });
+  } catch (error) {
+    console.error('Sync error:', error);
+    res.status(500).json({ error: 'Sync failed' });
+  }
+});
+
+// Get synced data
+app.get('/api/v3/sync', verifyUser, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const userData = await mongoose.connection.db.collection('userdata').findOne({ userId });
+    
+    res.json({
+      success: true,
+      data: {
+        applications: userData?.applications || [],
+        reminders: userData?.reminders || [],
+        lastSync: userData?.lastSync
+      }
+    });
+  } catch (error) {
+    console.error('Get sync error:', error);
+    res.status(500).json({ error: 'Failed to get data' });
+  }
+});
+
+// Helper function to merge arrays
+function mergeArrays(existing, incoming, idField) {
+  const map = new Map();
+  
+  // Add existing items
+  existing.forEach(item => map.set(item[idField], item));
+  
+  // Merge/overwrite with incoming items (prefer newer)
+  incoming.forEach(item => {
+    const existingItem = map.get(item[idField]);
+    if (!existingItem || new Date(item.updatedAt || item.createdAt) > new Date(existingItem.updatedAt || existingItem.createdAt)) {
+      map.set(item[idField], item);
+    }
+  });
+  
+  return Array.from(map.values());
+}
+
+// Generate cover letter with AI
+app.post('/api/v3/generate-cover-letter', verifyUser, async (req, res) => {
+  try {
+    const { jobDescription, skills, tone } = req.body;
+    
+    if (!anthropic) {
+      return res.status(503).json({ error: 'AI service not available' });
+    }
+    
+    // Check subscription for pro features
+    if (req.user.subscriptionStatus !== 'active' && req.user.subscriptionStatus !== 'pro') {
+      return res.status(403).json({ error: 'Pro subscription required for AI features' });
+    }
+    
+    const toneInstructions = {
+      professional: 'Use formal, professional language.',
+      friendly: 'Use warm, approachable language while remaining professional.',
+      confident: 'Use assertive, confident language that highlights achievements.',
+      enthusiastic: 'Use energetic, passionate language showing excitement about the role.'
+    };
+    
+    const prompt = `Write a compelling cover letter for this job posting. ${toneInstructions[tone] || toneInstructions.professional}
+
+JOB DESCRIPTION:
+${jobDescription}
+
+${skills ? `CANDIDATE'S KEY SKILLS:\n${skills}` : ''}
+
+Write a 3-4 paragraph cover letter that:
+1. Opens with a strong hook showing genuine interest
+2. Highlights relevant skills and experience that match the job requirements
+3. Shows understanding of the company/role
+4. Ends with a confident call to action
+
+Do NOT use generic phrases like "I am writing to express my interest" or "I am a hard worker".
+Make it specific, compelling, and tailored to the job.`;
+
+    const message = await anthropic.messages.create({
+      model: 'claude-3-haiku-20240307',
+      max_tokens: 1500,
+      messages: [{ role: 'user', content: prompt }]
+    });
+    
+    res.json({
+      success: true,
+      coverLetter: message.content[0].text
+    });
+  } catch (error) {
+    console.error('Cover letter error:', error);
+    res.status(500).json({ error: 'Failed to generate cover letter' });
+  }
+});
+
+// Interview preparation tips
+app.post('/api/v3/interview-prep', verifyUser, async (req, res) => {
+  try {
+    const { jobDescription, company } = req.body;
+    
+    if (!anthropic) {
+      return res.status(503).json({ error: 'AI service not available' });
+    }
+    
+    if (req.user.subscriptionStatus !== 'active' && req.user.subscriptionStatus !== 'pro') {
+      return res.status(403).json({ error: 'Pro subscription required' });
+    }
+    
+    const prompt = `Based on this job description, generate interview preparation materials.
+
+JOB: ${jobDescription.substring(0, 2000)}
+COMPANY: ${company || 'Not specified'}
+
+Provide:
+1. 5 likely interview questions (technical and behavioral)
+2. Key topics to research about the company
+3. Skills to emphasize
+4. Questions the candidate should ask the interviewer
+
+Format as JSON:
+{
+  "questions": [{"question": "...", "tip": "how to answer"}],
+  "researchTopics": ["topic1", "topic2"],
+  "skillsToEmphasize": ["skill1", "skill2"],
+  "questionsToAsk": ["question1", "question2"]
+}`;
+
+    const message = await anthropic.messages.create({
+      model: 'claude-3-haiku-20240307',
+      max_tokens: 1500,
+      messages: [{ role: 'user', content: prompt }]
+    });
+    
+    let prepMaterials;
+    try {
+      const jsonMatch = message.content[0].text.match(/\{[\s\S]*\}/);
+      prepMaterials = JSON.parse(jsonMatch[0]);
+    } catch {
+      prepMaterials = { raw: message.content[0].text };
+    }
+    
+    res.json({ success: true, prepMaterials });
+  } catch (error) {
+    console.error('Interview prep error:', error);
+    res.status(500).json({ error: 'Failed to generate prep materials' });
+  }
+});
+
+// AI Chat assistant
+app.post('/api/v3/chat', verifyUser, async (req, res) => {
+  try {
+    const { message, context } = req.body;
+    
+    if (!anthropic) {
+      return res.status(503).json({ error: 'AI service not available' });
+    }
+    
+    const prompt = `You are a helpful job search assistant. Answer the user's question helpfully and concisely.
+
+${context ? `Context: ${context}\n` : ''}
+User question: ${message}
+
+Provide a helpful, actionable response.`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-3-haiku-20240307',
+      max_tokens: 500,
+      messages: [{ role: 'user', content: prompt }]
+    });
+    
+    res.json({
+      success: true,
+      reply: response.content[0].text
+    });
+  } catch (error) {
+    console.error('Chat error:', error);
+    res.status(500).json({ error: 'Chat failed' });
+  }
+});
+
+// =====================================
+// ADMIN ENDPOINTS
+// =====================================
+
+// Admin secret for protecting admin routes
+const ADMIN_SECRET = process.env.ADMIN_SECRET || 'applysafe-admin-2024';
+
+// Middleware to verify admin access
+const verifyAdmin = (req, res, next) => {
+  const adminKey = req.headers['x-admin-key'] || req.query.adminKey;
+  if (adminKey !== ADMIN_SECRET) {
+    return res.status(403).json({ error: 'Unauthorized: Invalid admin key' });
+  }
+  next();
+};
+
+// Get all users (admin only)
+app.get('/api/admin/users', verifyAdmin, async (req, res) => {
+  try {
+    const users = await User.find({}).sort({ createdAt: -1 });
+    
+    const stats = {
+      totalUsers: users.length,
+      proUsers: users.filter(u => u.subscriptionStatus === 'active' || u.subscriptionStatus === 'pro').length,
+      freeUsers: users.filter(u => u.subscriptionStatus === 'free' || !u.subscriptionStatus).length,
+      trialUsers: users.filter(u => u.subscriptionStatus === 'trial').length,
+    };
+    
+    res.json({
+      success: true,
+      stats,
+      users: users.map(u => ({
+        id: u._id,
+        email: u.email,
+        name: u.name,
+        picture: u.picture,
+        subscriptionStatus: u.subscriptionStatus || 'free',
+        createdAt: u.createdAt,
+        stripeCustomerId: u.stripeCustomerId ? '••••' + u.stripeCustomerId.slice(-4) : null
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// Get user count (public - for landing page)
+app.get('/api/stats/users', async (req, res) => {
+  try {
+    const count = await User.countDocuments();
+    res.json({ userCount: count });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get stats' });
+  }
+});
+
+// Admin dashboard HTML page
+app.get('/admin', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>ApplySafe Admin Dashboard</title>
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f3f4f6; min-height: 100vh; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #1f2937; margin-bottom: 20px; }
+        .login-form { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); max-width: 400px; margin: 100px auto; }
+        .login-form input { width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; margin-bottom: 15px; font-size: 16px; }
+        .login-form button { width: 100%; background: #10B981; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 16px; cursor: pointer; }
+        .login-form button:hover { background: #059669; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .stat-card h3 { color: #6b7280; font-size: 14px; margin-bottom: 8px; }
+        .stat-card .value { font-size: 36px; font-weight: bold; color: #1f2937; }
+        .stat-card.pro .value { color: #10B981; }
+        .users-table { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        th { background: #f9fafb; font-weight: 600; color: #374151; }
+        tr:hover { background: #f9fafb; }
+        .badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+        .badge.pro { background: #d1fae5; color: #059669; }
+        .badge.free { background: #e5e7eb; color: #6b7280; }
+        .badge.trial { background: #fef3c7; color: #d97706; }
+        .hidden { display: none; }
+        .error { color: #ef4444; margin-top: 10px; }
+        .refresh-btn { background: #6b7280; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin-bottom: 20px; }
+        .refresh-btn:hover { background: #4b5563; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <!-- Login Form -->
+        <div id="loginForm" class="login-form">
+          <h2 style="margin-bottom: 20px; text-align: center;">🔐 Admin Login</h2>
+          <input type="password" id="adminKey" placeholder="Enter Admin Key" />
+          <button onclick="login()">Login</button>
+          <p id="loginError" class="error hidden"></p>
+        </div>
+        
+        <!-- Dashboard -->
+        <div id="dashboard" class="hidden">
+          <h1>📊 ApplySafe Admin Dashboard</h1>
+          <button class="refresh-btn" onclick="loadUsers()">🔄 Refresh</button>
+          
+          <div class="stats">
+            <div class="stat-card">
+              <h3>Total Users</h3>
+              <div class="value" id="totalUsers">-</div>
+            </div>
+            <div class="stat-card pro">
+              <h3>Pro Subscribers</h3>
+              <div class="value" id="proUsers">-</div>
+            </div>
+            <div class="stat-card">
+              <h3>Free Users</h3>
+              <div class="value" id="freeUsers">-</div>
+            </div>
+            <div class="stat-card">
+              <h3>Trial Users</h3>
+              <div class="value" id="trialUsers">-</div>
+            </div>
+          </div>
+          
+          <div class="users-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Email</th>
+                  <th>Status</th>
+                  <th>Joined</th>
+                </tr>
+              </thead>
+              <tbody id="usersTable">
+                <tr><td colspan="4" style="text-align: center;">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      
+      <script>
+        let adminKey = '';
+        
+        function login() {
+          adminKey = document.getElementById('adminKey').value;
+          loadUsers();
+        }
+        
+        async function loadUsers() {
+          try {
+            const res = await fetch('/api/admin/users?adminKey=' + encodeURIComponent(adminKey));
+            const data = await res.json();
+            
+            if (data.error) {
+              document.getElementById('loginError').textContent = data.error;
+              document.getElementById('loginError').classList.remove('hidden');
+              return;
+            }
+            
+            // Show dashboard
+            document.getElementById('loginForm').classList.add('hidden');
+            document.getElementById('dashboard').classList.remove('hidden');
+            
+            // Update stats
+            document.getElementById('totalUsers').textContent = data.stats.totalUsers;
+            document.getElementById('proUsers').textContent = data.stats.proUsers;
+            document.getElementById('freeUsers').textContent = data.stats.freeUsers;
+            document.getElementById('trialUsers').textContent = data.stats.trialUsers;
+            
+            // Update table
+            const tbody = document.getElementById('usersTable');
+            tbody.innerHTML = data.users.map(u => \`
+              <tr>
+                <td>
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <img src="\${u.picture || 'https://via.placeholder.com/32'}" style="width: 32px; height: 32px; border-radius: 50%;" />
+                    \${u.name || 'Unknown'}
+                  </div>
+                </td>
+                <td>\${u.email}</td>
+                <td><span class="badge \${u.subscriptionStatus}">\${u.subscriptionStatus}</span></td>
+                <td>\${new Date(u.createdAt).toLocaleDateString()}</td>
+              </tr>
+            \`).join('');
+            
+          } catch (error) {
+            console.error('Error:', error);
+            document.getElementById('loginError').textContent = 'Failed to connect to server';
+            document.getElementById('loginError').classList.remove('hidden');
+          }
+        }
+        
+        // Check for stored key
+        document.getElementById('adminKey').addEventListener('keypress', (e) => {
+          if (e.key === 'Enter') login();
+        });
+      </script>
+    </body>
+    </html>
+  `);
 });
 
 const PORT = process.env.PORT || 3000;
