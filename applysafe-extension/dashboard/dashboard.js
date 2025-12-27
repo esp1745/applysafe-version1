@@ -934,8 +934,11 @@ async function sendChatMessage() {
       messagesContainer.innerHTML += `<div class="message assistant"><p>${escapeHtml(response.reply)}</p></div>`;
     } else if (response?.error === 'not_authenticated') {
       messagesContainer.innerHTML += `<div class="message assistant"><p>Please sign in to chat with AI assistant.</p></div>`;
+    } else if (response?.error === 'session_expired') {
+      messagesContainer.innerHTML += `<div class="message assistant"><p>Your session has expired. Please sign out and sign back in to continue using AI features.</p></div>`;
     } else {
-      messagesContainer.innerHTML += `<div class="message assistant"><p>I'm sorry, I couldn't process that. Please try again.</p></div>`;
+      console.error('AI Chat error:', response);
+      messagesContainer.innerHTML += `<div class="message assistant"><p>I'm sorry, I couldn't process that. Error: ${response?.error || 'Unknown error'}. Please try signing out and back in.</p></div>`;
     }
   } catch (error) {
     // Remove typing indicator

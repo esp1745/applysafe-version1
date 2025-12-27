@@ -1224,6 +1224,9 @@ async function chatWithAI(message, context = {}) {
       return { success: false, error: 'not_authenticated', message: 'Please sign in to use AI features' };
     }
 
+    console.log('🤖 Calling AI chat API...');
+    console.log('Token preview:', authStatus.token?.substring(0, 20) + '...');
+
     const response = await fetch(`${CONFIG.BACKEND_URL}/api/v3/chat`, {
       method: 'POST',
       headers: {
@@ -1236,9 +1239,15 @@ async function chatWithAI(message, context = {}) {
       })
     });
 
+    console.log('📡 AI API response status:', response.status);
     const data = await response.json();
+    console.log('📥 AI API response:', data);
     
     if (!response.ok) {
+      // If token is invalid, prompt re-login
+      if (response.status === 401) {
+        return { success: false, error: 'session_expired', message: 'Session expired. Please sign out and sign in again.' };
+      }
       return { success: false, error: data.error || 'Failed to get AI response' };
     }
 
