@@ -26,18 +26,79 @@ const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;
 
-// Connect to MongoDB Atlas
+// Connect to MongoDB Atlas with connection caching for serverless
 const mongoUri = process.env.MONGODB_URI || 'mongodb+srv://esparance7_db_user:T1qUNMo1dciOMjEi@cluster0.pgium5y.mongodb.net/applysafe?retryWrites=true&w=majority';
-mongoose.connect(mongoUri).then(() => {
-  console.log('Connected to MongoDB Atlas');
-}).catch((err) => {
-  console.error('MongoDB connection error:', err);
-});
+
+let cachedConnection = null;
+
+async function connectToDatabase() {
+  if (cachedConnection && mongoose.connection.readyState === 1) {
+    return cachedConnection;
+  }
+  
+  // Close any existing pending connections
+  if (mongoose.connection.readyState === 2) {
+    try {
+      await mongoose.connection.close();
+    } catch (e) {
+      // Ignore close errors
+    }
+  }
+  
+  try {
+    mongoose.set('bufferCommands', false);
+    cachedConnection = await mongoose.connect(mongoUri, {
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10,
+    });
+    console.log('Connected to MongoDB Atlas');
+    return cachedConnection;
+  } catch (err) {
+    console.error('MongoDB connection error:', err.message);
+    cachedConnection = null;
+    throw err;
+  }
+}
+
+// Don't attempt initial connection in serverless - connect on demand
 
 // Store license keys and users in memory (use database in production)
 const licenses = new Map();
 const users = new Map();
 const userUsage = new Map();
+
+// =====================================
+// DEBUG/HEALTH ENDPOINTS
+// =====================================
+
+// Health check endpoint
+app.get('/api/health', async (req, res) => {
+  let mongoStatus = mongoose.connection.readyState;
+  const mongoStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+  let connectionError = null;
+  
+  // Try to connect if not already connected
+  if (mongoStatus !== 1) {
+    try {
+      await connectToDatabase();
+      mongoStatus = mongoose.connection.readyState;
+    } catch (err) {
+      connectionError = err.message;
+    }
+  }
+  
+  res.json({
+    status: mongoStatus === 1 ? 'ok' : 'degraded',
+    timestamp: new Date().toISOString(),
+    mongodb: mongoStates[mongoStatus] || 'unknown',
+    mongoReadyState: mongoStatus,
+    connectionError: connectionError,
+    anthropic: !!anthropic,
+    stripe: !!process.env.STRIPE_SECRET_KEY
+  });
+});
 
 // =====================================
 // CLAUDE AI ANALYSIS PROXY ENDPOINT
@@ -1162,8 +1223,14 @@ const verifyUser = async (req, res, next) => {
 // Sync user data (applications & reminders)
 app.post('/api/v3/sync', verifyUser, async (req, res) => {
   try {
-    const { applications, reminders, lastSync } = req.body;
+    const { applications, reminders, scanHistory, lastSync } = req.body;
     const userId = req.user._id;
+    
+    console.log('📥 Sync request from user:', userId, {
+      applications: applications?.length || 0,
+      reminders: reminders?.length || 0,
+      scanHistory: scanHistory?.length || 0
+    });
     
     // Get or create user data document
     let userData = await mongoose.connection.db.collection('userdata').findOne({ userId });
@@ -1174,19 +1241,31 @@ app.post('/api/v3/sync', verifyUser, async (req, res) => {
         userId,
         applications: applications || [],
         reminders: reminders || [],
+        scanHistory: scanHistory || [],
         lastSync: new Date()
       });
       
       return res.json({
         success: true,
         message: 'Initial sync complete',
-        data: { applications, reminders }
+        data: { 
+          applications: applications || [], 
+          reminders: reminders || [],
+          scanHistory: scanHistory || []
+        }
       });
     }
     
     // Merge data - prefer newer items
     const mergedApps = mergeArrays(userData.applications || [], applications || [], 'id');
     const mergedReminders = mergeArrays(userData.reminders || [], reminders || [], 'id');
+    const mergedScanHistory = mergeArrays(userData.scanHistory || [], scanHistory || [], 'url');
+    
+    console.log('✅ Merged data:', {
+      applications: mergedApps.length,
+      reminders: mergedReminders.length,
+      scanHistory: mergedScanHistory.length
+    });
     
     // Update database
     await mongoose.connection.db.collection('userdata').updateOne(
@@ -1195,6 +1274,7 @@ app.post('/api/v3/sync', verifyUser, async (req, res) => {
         $set: {
           applications: mergedApps,
           reminders: mergedReminders,
+          scanHistory: mergedScanHistory,
           lastSync: new Date()
         }
       }
@@ -1205,12 +1285,13 @@ app.post('/api/v3/sync', verifyUser, async (req, res) => {
       message: 'Sync complete',
       data: {
         applications: mergedApps,
-        reminders: mergedReminders
+        reminders: mergedReminders,
+        scanHistory: mergedScanHistory
       }
     });
   } catch (error) {
-    console.error('Sync error:', error);
-    res.status(500).json({ error: 'Sync failed' });
+    console.error('❌ Sync error:', error);
+    res.status(500).json({ error: 'Sync failed', message: error.message });
   }
 });
 
@@ -1225,6 +1306,7 @@ app.get('/api/v3/sync', verifyUser, async (req, res) => {
       data: {
         applications: userData?.applications || [],
         reminders: userData?.reminders || [],
+        scanHistory: userData?.scanHistory || [],
         lastSync: userData?.lastSync
       }
     });
@@ -1255,14 +1337,21 @@ function mergeArrays(existing, incoming, idField) {
 // Generate cover letter with AI
 app.post('/api/v3/generate-cover-letter', verifyUser, async (req, res) => {
   try {
-    const { jobDescription, skills, tone } = req.body;
+    // Support both parameter formats (new: skills/tone, old: userSkills/jobTitle/company)
+    const { jobDescription, skills, userSkills, tone, jobTitle, company } = req.body;
+    const candidateSkills = skills || userSkills || '';
     
     if (!anthropic) {
       return res.status(503).json({ error: 'AI service not available' });
     }
     
-    // Check subscription for pro features
-    if (req.user.subscriptionStatus !== 'active' && req.user.subscriptionStatus !== 'pro') {
+    if (!jobDescription) {
+      return res.status(400).json({ error: 'Job description is required' });
+    }
+    
+    // Check subscription for pro features (active, pro, or trialing users)
+    const validStatuses = ['active', 'pro', 'trialing'];
+    if (!validStatuses.includes(req.user.subscriptionStatus)) {
       return res.status(403).json({ error: 'Pro subscription required for AI features' });
     }
     
@@ -1275,10 +1364,13 @@ app.post('/api/v3/generate-cover-letter', verifyUser, async (req, res) => {
     
     const prompt = `Write a compelling cover letter for this job posting. ${toneInstructions[tone] || toneInstructions.professional}
 
+${jobTitle ? `JOB TITLE: ${jobTitle}` : ''}
+${company ? `COMPANY: ${company}` : ''}
+
 JOB DESCRIPTION:
 ${jobDescription}
 
-${skills ? `CANDIDATE'S KEY SKILLS:\n${skills}` : ''}
+${candidateSkills ? `CANDIDATE'S KEY SKILLS:\n${candidateSkills}` : ''}
 
 Write a 3-4 paragraph cover letter that:
 1. Opens with a strong hook showing genuine interest
@@ -1305,36 +1397,40 @@ Make it specific, compelling, and tailored to the job.`;
   }
 });
 
-// Interview preparation tips
-app.post('/api/v3/interview-prep', verifyUser, async (req, res) => {
+// Analyze resume match with job description
+app.post('/api/v3/analyze-resume', verifyUser, async (req, res) => {
   try {
-    const { jobDescription, company } = req.body;
+    const { resumeText, jobDescription } = req.body;
     
     if (!anthropic) {
       return res.status(503).json({ error: 'AI service not available' });
     }
     
-    if (req.user.subscriptionStatus !== 'active' && req.user.subscriptionStatus !== 'pro') {
-      return res.status(403).json({ error: 'Pro subscription required' });
+    const validStatuses = ['active', 'pro', 'trialing'];
+    if (!validStatuses.includes(req.user.subscriptionStatus)) {
+      return res.status(403).json({ error: 'Pro subscription required for AI features' });
     }
     
-    const prompt = `Based on this job description, generate interview preparation materials.
+    if (!resumeText || !jobDescription) {
+      return res.status(400).json({ error: 'Resume text and job description are required' });
+    }
+    
+    const prompt = `Analyze how well this resume matches the job description. Be specific and actionable.
 
-JOB: ${jobDescription.substring(0, 2000)}
-COMPANY: ${company || 'Not specified'}
+RESUME:
+${resumeText.substring(0, 3000)}
 
-Provide:
-1. 5 likely interview questions (technical and behavioral)
-2. Key topics to research about the company
-3. Skills to emphasize
-4. Questions the candidate should ask the interviewer
+JOB DESCRIPTION:
+${jobDescription.substring(0, 2000)}
 
-Format as JSON:
+Provide a detailed analysis in this exact JSON format:
 {
-  "questions": [{"question": "...", "tip": "how to answer"}],
-  "researchTopics": ["topic1", "topic2"],
-  "skillsToEmphasize": ["skill1", "skill2"],
-  "questionsToAsk": ["question1", "question2"]
+  "score": <number 0-100>,
+  "matchingSkills": ["skill1", "skill2", ...],
+  "missingSkills": ["skill1", "skill2", ...],
+  "recommendations": "Specific recommendations to improve resume for this job",
+  "keywordMatches": ["keyword1", "keyword2", ...],
+  "experienceAlignment": "Brief assessment of how experience aligns with requirements"
 }`;
 
     const message = await anthropic.messages.create({
@@ -1343,15 +1439,83 @@ Format as JSON:
       messages: [{ role: 'user', content: prompt }]
     });
     
-    let prepMaterials;
+    let analysis;
     try {
       const jsonMatch = message.content[0].text.match(/\{[\s\S]*\}/);
-      prepMaterials = JSON.parse(jsonMatch[0]);
+      analysis = JSON.parse(jsonMatch[0]);
     } catch {
-      prepMaterials = { raw: message.content[0].text };
+      analysis = { 
+        score: 70, 
+        raw: message.content[0].text,
+        matchingSkills: [],
+        missingSkills: [],
+        recommendations: message.content[0].text
+      };
     }
     
-    res.json({ success: true, prepMaterials });
+    res.json({ success: true, analysis });
+  } catch (error) {
+    console.error('Resume analysis error:', error);
+    res.status(500).json({ error: 'Failed to analyze resume' });
+  }
+});
+
+// Interview preparation tips
+app.post('/api/v3/interview-prep', verifyUser, async (req, res) => {
+  try {
+    // Support both jobDescription and jobTitle/company params
+    const { jobDescription, jobTitle, company, industry } = req.body;
+    
+    if (!anthropic) {
+      return res.status(503).json({ error: 'AI service not available' });
+    }
+    
+    const validStatuses = ['active', 'pro', 'trialing'];
+    if (!validStatuses.includes(req.user.subscriptionStatus)) {
+      return res.status(403).json({ error: 'Pro subscription required' });
+    }
+    
+    // Build job context from available params
+    const jobContext = jobDescription 
+      ? `JOB DESCRIPTION:\n${jobDescription.substring(0, 2000)}`
+      : `JOB TITLE: ${jobTitle || 'Software Engineer'}\nCOMPANY: ${company || 'Not specified'}\nINDUSTRY: ${industry || 'Technology'}`;
+    
+    const prompt = `Generate comprehensive interview preparation materials.
+
+${jobContext}
+
+Provide:
+1. 5 likely interview questions (mix of technical and behavioral)
+2. Brief tips on how to answer each question
+3. Key topics to research about the company/role
+4. Skills to emphasize during the interview
+5. Smart questions the candidate should ask the interviewer
+
+Format as JSON:
+{
+  "questions": ["Question 1?", "Question 2?", "Question 3?", "Question 4?", "Question 5?"],
+  "tips": ["Tip 1", "Tip 2", "Tip 3", "Tip 4", "Tip 5"],
+  "research": ["Topic 1", "Topic 2", "Topic 3"],
+  "skillsToEmphasize": ["skill1", "skill2", "skill3"],
+  "questionsToAsk": ["Question to ask 1?", "Question to ask 2?", "Question to ask 3?"]
+}`;
+
+    const message = await anthropic.messages.create({
+      model: 'claude-3-haiku-20240307',
+      max_tokens: 1500,
+      messages: [{ role: 'user', content: prompt }]
+    });
+    
+    let prep;
+    try {
+      const jsonMatch = message.content[0].text.match(/\{[\s\S]*\}/);
+      prep = JSON.parse(jsonMatch[0]);
+    } catch {
+      prep = { raw: message.content[0].text };
+    }
+    
+    // Return in both formats for compatibility
+    res.json({ success: true, prep, prepMaterials: prep });
   } catch (error) {
     console.error('Interview prep error:', error);
     res.status(500).json({ error: 'Failed to generate prep materials' });
