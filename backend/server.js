@@ -828,12 +828,16 @@ app.post('/api/auth/google', async (req, res) => {
   try {
     const { googleToken, email, name, picture } = req.body;
 
+    console.log('🔐 Auth request received:', { email, name, hasToken: !!googleToken });
+    console.log('🔑 GOOGLE_CLIENT_ID configured:', process.env.GOOGLE_CLIENT_ID ? 'YES' : 'NO');
+
     // Verify Google token - try as ID token first, then as access token
     let googleId;
     let verifiedEmail = email;
     
     try {
       // Try verifying as ID token first
+      console.log('🔍 Attempting ID token verification...');
       const ticket = await googleClient.verifyIdToken({
         idToken: googleToken,
         audience: process.env.GOOGLE_CLIENT_ID
@@ -841,15 +845,21 @@ app.post('/api/auth/google', async (req, res) => {
       const payload = ticket.getPayload();
       googleId = payload['sub'];
       verifiedEmail = payload['email'];
+      console.log('✅ ID token verified:', verifiedEmail);
     } catch (idTokenError) {
       // If ID token verification fails, try as access token
-      console.log('ID token verification failed, trying as access token...');
+      console.log('❌ ID token verification failed:', idTokenError.message);
+      console.log('🔍 Attempting access token verification...');
       try {
         const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
           headers: { Authorization: `Bearer ${googleToken}` }
         });
         
+        console.log('📡 Google userinfo response status:', userInfoResponse.status);
+        
         if (!userInfoResponse.ok) {
+          const errorText = await userInfoResponse.text();
+          console.error('❌ Google userinfo error:', errorText);
           throw new Error('Failed to verify access token');
         }
         
@@ -857,14 +867,17 @@ app.post('/api/auth/google', async (req, res) => {
         googleId = userInfo.id;
         verifiedEmail = userInfo.email;
         
+        console.log('✅ Access token verified:', verifiedEmail);
+        
         // Verify the email matches what was sent
         if (verifiedEmail !== email) {
+          console.error('❌ Email mismatch:', { sent: email, verified: verifiedEmail });
           throw new Error('Email mismatch');
         }
-        
-        console.log('Access token verified successfully for:', verifiedEmail);
       } catch (accessTokenError) {
-        console.error('Both token verification methods failed');
+        console.error('❌ Both token verification methods failed');
+        console.error('ID token error:', idTokenError.message);
+        console.error('Access token error:', accessTokenError.message);
         throw new Error('Invalid token');
       }
     }
@@ -888,7 +901,7 @@ app.post('/api/auth/google', async (req, res) => {
         createdAt: new Date()
       });
       await user.save();
-      console.log('New user created:', email);
+      console.log('✅ New user created:', email);
     } else {
       // Update user info if changed
       let updated = false;
@@ -897,7 +910,7 @@ app.post('/api/auth/google', async (req, res) => {
       if (user.email !== email) { user.email = email; updated = true; }
       if (!user.googleId) { user.googleId = googleId; updated = true; }
       if (updated) await user.save();
-      console.log('User logged in:', email);
+      console.log('✅ User logged in:', email);
     }
 
 
@@ -908,6 +921,8 @@ app.post('/api/auth/google', async (req, res) => {
       { expiresIn: '30d' }
     );
 
+    console.log('✅ JWT generated for:', email);
+
     res.json({
       success: true,
       userId: user._id,
@@ -917,8 +932,8 @@ app.post('/api/auth/google', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Auth error:', error);
-    res.status(401).json({ error: 'Authentication failed' });
+    console.error('❌ Auth error:', error);
+    res.status(401).json({ error: 'Authentication failed', message: error.message });
   }
 });
 
