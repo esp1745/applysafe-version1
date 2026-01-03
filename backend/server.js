@@ -2,7 +2,6 @@
 require('dotenv').config(); // Load .env FIRST
 
 const express = require('express');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
@@ -14,6 +13,9 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+// Initialize Stripe AFTER environment variables are loaded
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 // JWT secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
