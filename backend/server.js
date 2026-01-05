@@ -28,7 +28,7 @@ const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;
 
-// Connect to MongoDB Atlas with connection caching for serverless
+// Connect to MongoDB Atlas
 const mongoUri = process.env.MONGODB_URI || 'mongodb+srv://esparance7_db_user:T1qUNMo1dciOMjEi@cluster0.pgium5y.mongodb.net/applysafe?retryWrites=true&w=majority';
 
 let cachedConnection = null;
@@ -55,20 +55,17 @@ async function connectToDatabase() {
       socketTimeoutMS: 45000,
       maxPoolSize: 10,
     });
-    console.log('Connected to MongoDB Atlas');
+    console.log('✅ Connected to MongoDB Atlas');
     return cachedConnection;
   } catch (err) {
-    console.error('MongoDB connection error:', err.message);
+    console.error('❌ MongoDB connection error:', err.message);
     cachedConnection = null;
     throw err;
   }
 }
 
-// Don't attempt initial connection in serverless - connect on demand
-
-// Store license keys and users in memory (use database in production)
+// Store license keys and users in memory
 const licenses = new Map();
-const users = new Map();
 const userUsage = new Map();
 
 // =====================================
@@ -885,12 +882,8 @@ app.post('/api/auth/google', async (req, res) => {
     }
 
     // Find or create user in MongoDB
-    let user = await User.findOne({ googleId });
-    if (!user) {
-      // If not found by googleId, try by email (for users who signed up before GoogleId was stored)
-      user = await User.findOne({ email });
-    }
-
+    let user = await User.findOne({ email });
+    
     if (!user) {
       // Create new user
       user = new User({
@@ -903,18 +896,15 @@ app.post('/api/auth/google', async (req, res) => {
         createdAt: new Date()
       });
       await user.save();
-      console.log('✅ New user created:', email);
+      console.log('✅ New user created in MongoDB:', { email, name });
     } else {
-      // Update user info if changed
-      let updated = false;
-      if (user.name !== name) { user.name = name; updated = true; }
-      if (user.picture !== picture) { user.picture = picture; updated = true; }
-      if (user.email !== email) { user.email = email; updated = true; }
-      if (!user.googleId) { user.googleId = googleId; updated = true; }
-      if (updated) await user.save();
-      console.log('✅ User logged in:', email);
+      // Update existing user with latest info
+      user.name = name;
+      user.picture = picture;
+      user.googleId = googleId;
+      await user.save();
+      console.log('✅ User updated in MongoDB:', { email, name });
     }
-
 
     // Generate JWT token
     const token = jwt.sign(
@@ -936,6 +926,70 @@ app.post('/api/auth/google', async (req, res) => {
   } catch (error) {
     console.error('❌ Auth error:', error);
     res.status(401).json({ error: 'Authentication failed', message: error.message });
+  }
+});
+
+// Simple Email Authentication Endpoint
+app.post('/api/auth/email', async (req, res) => {
+  try {
+    const { email, name } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    console.log('📧 Email auth request:', { email, name });
+    
+    // Ensure database connection
+    await connectToDatabase();
+
+    // Find or create user in MongoDB
+    let user = await User.findOne({ email });
+    
+    if (!user) {
+      // Create new user
+      user = await User.create({
+        email,
+        name: name || email.split('@')[0],
+        authProvider: 'email',
+        subscriptionStatus: 'trial',
+        trialStartDate: new Date()
+      });
+      console.log('✅ New user created:', email);
+    } else {
+      // Update last login
+      user.lastLogin = new Date();
+      user.loginCount = (user.loginCount || 0) + 1;
+      await user.save();
+      console.log('✅ User login updated:', email);
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user._id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    console.log('✅ JWT generated for:', email);
+
+    res.json({
+      success: true,
+      userId: user._id,
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        picture: user.picture
+      },
+      subscriptionStatus: user.subscriptionStatus,
+      trialInfo: { trialDaysLeft: 14 }
+    });
+
+  } catch (error) {
+    console.error('❌ Email auth error:', error);
+    res.status(500).json({ error: 'Authentication failed', message: error.message });
   }
 });
 
@@ -1366,10 +1420,22 @@ app.post('/api/v3/generate-cover-letter', verifyUser, async (req, res) => {
       return res.status(400).json({ error: 'Job description is required' });
     }
     
-    // Check subscription for pro features (active, pro, or trialing users)
-    const validStatuses = ['active', 'pro', 'trialing'];
-    if (!validStatuses.includes(req.user.subscriptionStatus)) {
-      return res.status(403).json({ error: 'Pro subscription required for AI features' });
+    // Check Stripe for actual subscription status
+    let hasProSubscription = false;
+    try {
+      const customers = await stripe.customers.list({ email: req.user.email, limit: 1 });
+      if (customers.data.length > 0) {
+        const subs = await stripe.subscriptions.list({ customer: customers.data[0].id, limit: 1 });
+        if (subs.data.length > 0 && subs.data[0].status === 'active') {
+          hasProSubscription = true;
+        }
+      }
+    } catch (stripeError) {
+      console.log('Could not check Stripe:', stripeError.message);
+    }
+    
+    if (!hasProSubscription) {
+      return res.status(403).json({ error: 'Pro subscription required', message: 'Upgrade to Pro to use AI features' });
     }
     
     const toneInstructions = {
@@ -1423,9 +1489,22 @@ app.post('/api/v3/analyze-resume', verifyUser, async (req, res) => {
       return res.status(503).json({ error: 'AI service not available' });
     }
     
-    const validStatuses = ['active', 'pro', 'trialing'];
-    if (!validStatuses.includes(req.user.subscriptionStatus)) {
-      return res.status(403).json({ error: 'Pro subscription required for AI features' });
+    // Check Stripe for actual subscription status
+    let hasProSubscription = false;
+    try {
+      const customers = await stripe.customers.list({ email: req.user.email, limit: 1 });
+      if (customers.data.length > 0) {
+        const subs = await stripe.subscriptions.list({ customer: customers.data[0].id, limit: 1 });
+        if (subs.data.length > 0 && subs.data[0].status === 'active') {
+          hasProSubscription = true;
+        }
+      }
+    } catch (stripeError) {
+      console.log('Could not check Stripe:', stripeError.message);
+    }
+    
+    if (!hasProSubscription) {
+      return res.status(403).json({ error: 'Pro subscription required', message: 'Upgrade to Pro to use AI features' });
     }
     
     if (!resumeText || !jobDescription) {
@@ -1487,9 +1566,22 @@ app.post('/api/v3/interview-prep', verifyUser, async (req, res) => {
       return res.status(503).json({ error: 'AI service not available' });
     }
     
-    const validStatuses = ['active', 'pro', 'trialing'];
-    if (!validStatuses.includes(req.user.subscriptionStatus)) {
-      return res.status(403).json({ error: 'Pro subscription required' });
+    // Check Stripe for actual subscription status
+    let hasProSubscription = false;
+    try {
+      const customers = await stripe.customers.list({ email: req.user.email, limit: 1 });
+      if (customers.data.length > 0) {
+        const subs = await stripe.subscriptions.list({ customer: customers.data[0].id, limit: 1 });
+        if (subs.data.length > 0 && subs.data[0].status === 'active') {
+          hasProSubscription = true;
+        }
+      }
+    } catch (stripeError) {
+      console.log('Could not check Stripe:', stripeError.message);
+    }
+    
+    if (!hasProSubscription) {
+      return res.status(403).json({ error: 'Pro subscription required', message: 'Upgrade to Pro to use AI features' });
     }
     
     // Build job context from available params
@@ -1546,6 +1638,24 @@ app.post('/api/v3/chat', verifyUser, async (req, res) => {
     
     if (!anthropic) {
       return res.status(503).json({ error: 'AI service not available' });
+    }
+    
+    // Check Stripe for actual subscription status
+    let hasProSubscription = false;
+    try {
+      const customers = await stripe.customers.list({ email: req.user.email, limit: 1 });
+      if (customers.data.length > 0) {
+        const subs = await stripe.subscriptions.list({ customer: customers.data[0].id, limit: 1 });
+        if (subs.data.length > 0 && subs.data[0].status === 'active') {
+          hasProSubscription = true;
+        }
+      }
+    } catch (stripeError) {
+      console.log('Could not check Stripe:', stripeError.message);
+    }
+    
+    if (!hasProSubscription) {
+      return res.status(403).json({ error: 'Pro subscription required', message: 'Upgrade to Pro to use AI features' });
     }
     
     const prompt = `You are a helpful job search assistant. Answer the user's question helpfully and concisely.
@@ -1776,6 +1886,130 @@ app.get('/admin', (req, res) => {
     </body>
     </html>
   `);
+});
+
+// =====================================
+// USER TRACKING ENDPOINTS
+// =====================================
+
+// Get all users (admin endpoint)
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    await connectToDatabase();
+    const users = await User.find({}, 'email name createdAt lastLogin loginCount totalScans totalJobsAnalyzed subscriptionStatus');
+    
+    res.json({
+      success: true,
+      totalUsers: users.length,
+      users: users
+    });
+  } catch (error) {
+    console.error('❌ Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users', message: error.message });
+  }
+});
+
+// Get user stats by email
+app.get('/api/user/stats/:email', async (req, res) => {
+  try {
+    await connectToDatabase();
+    const user = await User.findOne({ email: req.params.email });
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({
+      success: true,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        createdAt: user.createdAt,
+        lastLogin: user.lastLogin,
+        loginCount: user.loginCount,
+        totalScans: user.totalScans,
+        totalJobsAnalyzed: user.totalJobsAnalyzed,
+        subscriptionStatus: user.subscriptionStatus,
+        isPremium: user.isPremium
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error fetching user stats:', error);
+    res.status(500).json({ error: 'Failed to fetch user stats', message: error.message });
+  }
+});
+
+// Log user activity
+app.post('/api/user/activity', async (req, res) => {
+  try {
+    const { email, action, details } = req.body;
+    
+    if (!email || !action) {
+      return res.status(400).json({ error: 'Email and action are required' });
+    }
+    
+    await connectToDatabase();
+    const user = await User.findOne({ email });
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Add activity to log
+    user.activityLog = user.activityLog || [];
+    user.activityLog.push({
+      action,
+      timestamp: new Date(),
+      details: details || {}
+    });
+    
+    // Update user with activity log and metrics
+    if (action === 'scan') {
+      user.totalScans = (user.totalScans || 0) + 1;
+    } else if (action === 'sync') {
+      user.lastSyncDate = new Date();
+    }
+    
+    await user.save();
+    
+    res.json({ success: true, message: 'Activity logged' });
+  } catch (error) {
+    console.error('❌ Error logging activity:', error);
+    res.status(500).json({ error: 'Failed to log activity', message: error.message });
+  }
+});
+
+// Get dashboard stats
+app.get('/api/admin/stats', async (req, res) => {
+  try {
+    await connectToDatabase();
+    const totalUsers = await User.countDocuments();
+    const freeUsers = await User.countDocuments({ subscriptionStatus: 'free' });
+    const trialUsers = await User.countDocuments({ subscriptionStatus: 'trial' });
+    const paidUsers = await User.countDocuments({ subscriptionStatus: 'paid' });
+    
+    const users = await User.find();
+    const totalScans = users.reduce((sum, user) => sum + (user.totalScans || 0), 0);
+    const totalJobs = users.reduce((sum, user) => sum + (user.totalJobsAnalyzed || 0), 0);
+    const premiumUsers = await User.countDocuments({ isPremium: true });
+    
+    res.json({
+      success: true,
+      stats: {
+        totalUsers,
+        freeUsers,
+        trialUsers,
+        paidUsers,
+        totalScans,
+        totalJobsAnalyzed: totalJobs,
+        premiumUsers
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error fetching stats:', error);
+    res.status(500).json({ error: 'Failed to fetch stats', message: error.message });
+  }
 });
 
 const PORT = process.env.PORT || 3000;

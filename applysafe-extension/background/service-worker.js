@@ -3,16 +3,41 @@
  * Handles AI analysis, API calls, and extension coordination
  */
 
+console.log('🔵 SERVICE WORKER FILE LOADING...');
+
 // Import modules
-importScripts('database.js');
-importScripts('subscription.js');
-importScripts('auth.js');
-importScripts('h1b.js');
+try {
+  importScripts('database.js');
+  console.log('✅ database.js loaded');
+} catch (e) {
+  console.error('❌ Failed to load database.js:', e);
+}
+
+try {
+  importScripts('subscription.js');
+  console.log('✅ subscription.js loaded');
+} catch (e) {
+  console.error('❌ Failed to load subscription.js:', e);
+}
+
+try {
+  importScripts('auth.js');
+  console.log('✅ auth.js loaded');
+} catch (e) {
+  console.error('❌ Failed to load auth.js:', e);
+}
+
+try {
+  importScripts('h1b.js');
+  console.log('✅ h1b.js loaded');
+} catch (e) {
+  console.error('❌ Failed to load h1b.js:', e);
+}
 
 // Configuration
 const CONFIG = {
-  BACKEND_URL: 'https://applysafe-version1.vercel.app',
-  API_ENDPOINT: 'https://applysafe-version1.vercel.app/api/analyze-job',
+  BACKEND_URL: 'http://localhost:3000',
+  API_ENDPOINT: 'http://localhost:3000/api/analyze-job',
   MODEL: 'claude-3-haiku-20240307', // Fast and cost-effective for this use case
   MAX_TOKENS: 1024,
   CACHE_DURATION: 3600000, // 1 hour in ms
@@ -48,8 +73,8 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       reports: []
     });
     
-    // Open options page for API key setup
-    chrome.runtime.openOptionsPage();
+    // Open welcome page for new users
+    chrome.tabs.create({ url: chrome.runtime.getURL('welcome/welcome.html') });
   } else if (details.reason === 'update') {
     // Clear old cache on extension update to refresh H1B data
     console.log('ApplySafe: Extension updated, clearing old caches');
@@ -59,51 +84,50 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
 // Listen for successful payment completion
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  // Check if user landed on success page after payment
-  if (changeInfo.status === 'complete' && tab.url && tab.url.includes('localhost:3000/success')) {
-    console.log('Payment success page detected!');
+  // Check if user landed on success page after payment (local or production)
+  if (changeInfo.status === 'complete' && tab.url && (tab.url.includes('/success') || tab.url.includes('session_id'))) {
+    console.log('Payment success page detected!', tab.url);
     
     // Extract session_id from URL
-    const urlParams = new URLSearchParams(new URL(tab.url).search);
-    const sessionId = urlParams.get('session_id');
-    
-    if (sessionId) {
-      console.log('Session ID found:', sessionId);
+    try {
+      const urlParams = new URLSearchParams(new URL(tab.url).search);
+      const sessionId = urlParams.get('session_id');
       
-      // Wait a moment for Stripe to process
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Retrieve session details from backend
-      try {
-        const response = await fetch(`http://localhost:3000/api/get-session?session_id=${sessionId}`);
-        const data = await response.json();
+      if (sessionId) {
+        console.log('Session ID found:', sessionId);
         
-        if (data.customerId) {
-          console.log('Activating subscription with customer ID:', data.customerId);
-          await activateSubscription(data.customerId, sessionId);
-        }
-      } catch (error) {
-        console.error('Error retrieving session:', error);
+        // Sync subscription status immediately
+        await syncSubscriptionStatus();
+        console.log('🔄 Subscription status synced after payment success.');
+        
+        // Notify any open popups/dashboards to refresh
+        chrome.runtime.sendMessage({ action: 'subscriptionSynced' }).catch(() => {});
       }
+    } catch (e) {
+      console.error('Error processing payment success:', e);
     }
   }
 });
 
 // Create context menu (do this on startup, not just on install)
 try {
-  chrome.contextMenus.create({
-    id: 'analyzeJob',
-    title: 'Analyze this job with ApplySafe',
-    contexts: ['page', 'link']
+  // Remove existing menu first to avoid duplicate error
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: 'analyzeJob',
+      title: 'Analyze this job with ApplySafe',
+      contexts: ['page', 'link']
+    });
   });
 } catch (e) {
-  // Menu might already exist
   console.log('Context menu setup:', e.message);
 }
 
+console.log('🟢 ApplySafe Service Worker READY - Message listener active');
+
 // Message handler
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('📨 Message received:', request.action);
+  console.log('📨 Message received:', request.action, 'from:', sender?.tab?.id || 'popup');
   handleMessage(request, sender)
     .then(response => {
       console.log('📤 Response sent for:', request.action);
@@ -134,6 +158,10 @@ async function handleMessage(request, sender) {
       case 'openPopup':
         // Can't programmatically open popup, but can open options
         chrome.runtime.openOptionsPage();
+        return { success: true };
+      
+      case 'openDashboard':
+        chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/dashboard.html') });
         return { success: true };
         
       case 'getJobHistory':
@@ -183,16 +211,82 @@ async function handleMessage(request, sender) {
       case 'signInWithGoogle':
         return await auth.signInWithGoogle();
         
+      case 'signInWithEmail':
+        return await auth.signInWithEmail(request.email, request.name);
+        
       case 'signOut':
+      case 'logout':
         return await auth.signOut();
+        
+      case 'refreshToken':
+        // Manually refresh the authentication token
+        console.log('🔄 Manual token refresh requested');
+        return await auth.refreshToken();
         
       case 'clearCache':
         await clearAllCache();
         return { success: true };
       
+      case 'getWidgetData':
+        // Get user data and stats for floating widget
+        try {
+          const widgetAuthStatus = await auth.getAuthStatus();
+          const widgetStorage = await chrome.storage.local.get(['stats', 'recentScans', 'user', 'subscription', 'guestScans']);
+          // Try auth status first, then fallback to storage
+          const user = widgetAuthStatus.isAuthenticated ? widgetAuthStatus.user : widgetStorage.user || null;
+          const isSignedIn = !!user?.email;
+          
+          // Get subscription - default to 'trial' for new users
+          let subscription = widgetStorage.subscription || { status: 'trial' };
+          
+          // Only consider 'active' if explicitly set - 'trial', 'expired', etc. are NOT active
+          const isProUser = subscription.status === 'active';
+          
+          // For guests, don't show accumulated stats - only show their session data
+          const guestScans = widgetStorage.guestScans || { count: 0 };
+          
+          console.log('getWidgetData: auth status:', widgetAuthStatus.isAuthenticated, 'user:', user?.email, 'subscription:', subscription.status, 'isPro:', isProUser);
+          return {
+            success: true,
+            user: user,
+            subscription: {
+              status: isProUser ? 'active' : (subscription.status || 'trial'),
+              planName: isProUser ? 'Pro' : 'Free Trial',
+              scansToday: subscription.scansToday || 0,
+              trialEnds: subscription.trialEnds
+            },
+            stats: isSignedIn ? {
+              threatsBlocked: widgetStorage.stats?.scamsBlocked || 0,
+              jobsScanned: widgetStorage.stats?.jobsScanned || 0,
+              safetyRate: widgetStorage.stats?.jobsScanned > 0 
+                ? Math.round(((widgetStorage.stats.jobsScanned - (widgetStorage.stats?.scamsBlocked || 0)) / widgetStorage.stats.jobsScanned) * 100) + '%'
+                : '100%'
+            } : {
+              // Guest stats - only show current session
+              threatsBlocked: 0,
+              jobsScanned: guestScans.count || 0,
+              safetyRate: '100%'
+            },
+            recentScans: isSignedIn ? (widgetStorage.recentScans || []).slice(0, 5).map(scan => ({
+              title: scan.title || scan.jobTitle,
+              company: scan.company,
+              riskScore: scan.riskScore,
+              time: getTimeAgo(scan.timestamp)
+            })) : [] // Don't show recent scans for guests
+          };
+        } catch (e) {
+          console.log('getWidgetData error:', e);
+          return { success: false, error: e.message };
+        }
+      
+      case 'signIn':
+        return await auth.signInWithGoogle();
+      
       // H1B Sponsorship Actions
       case 'checkH1BSponsorship':
+        console.log('H1B check requested for:', request.companyName);
         const h1bResult = await self.h1bModule.checkH1BSponsorship(request.companyName);
+        console.log('H1B result:', h1bResult);
         return { success: true, h1bData: h1bResult };
         
       case 'submitH1BFeedback':
@@ -220,7 +314,7 @@ async function handleMessage(request, sender) {
         return await chatWithAI(request.message, request.context);
         
       case 'syncToCloud':
-        return await syncToCloud(request.applications, request.reminders);
+        return await syncToCloud(request.applications, request.reminders, request.scanHistory);
         
       case 'syncFromCloud':
         return await syncFromCloud();
@@ -243,6 +337,21 @@ async function handleMessage(request, sender) {
   }
 }
 
+// Helper function to format time ago
+function getTimeAgo(timestamp) {
+  if (!timestamp) return 'Just now';
+  const now = Date.now();
+  const diff = now - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${days}d ago`;
+}
+
 // Clear all cached data (analysis and H1B cache)
 async function clearAllCache() {
   try {
@@ -262,19 +371,20 @@ async function analyzeJob(jobData, url, autoAnalysis = false) {
     
     if (!canAnalyze.allowed) {
       // User has exceeded limits
+      const scansToday = canAnalyze.usage?.scansToday || 0;
       if (authStatus.isAuthenticated) {
         // Signed in user - show server-synced limits
         showUpgradePrompt('limit_reached');
         return {
           success: false,
           error: 'limit_reached',
-          message: `Daily scan limit reached (${canAnalyze.usage.scansToday}/10). Upgrade to Pro for unlimited scans!`,
-          usage: canAnalyze.usage
+          message: `Daily scan limit reached (${scansToday}/10). Upgrade to Pro for unlimited scans!`,
+          usage: canAnalyze.usage || { scansToday: 0 }
         };
       } else {
         // Anonymous user - check local trial
-        const localTrial = auth.getLocalTrialInfo();
-        if (localTrial.isExpired) {
+        const localTrial = await auth.getLocalTrialInfo();
+        if (!localTrial.isTrialActive) {
           showUpgradePrompt('trial_expired');
           return {
             success: false,
@@ -287,7 +397,7 @@ async function analyzeJob(jobData, url, autoAnalysis = false) {
           return {
             success: false,
             error: 'limit_reached',
-            message: `Daily scan limit reached (${localTrial.scansToday}/10). Sign in with Google or upgrade to Pro!`,
+            message: `Daily scan limit reached (${localTrial.totalScansToday}/10). Sign in with Google or upgrade to Pro!`,
             trialInfo: localTrial
           };
         }
@@ -303,18 +413,37 @@ async function analyzeJob(jobData, url, autoAnalysis = false) {
     );
     console.log('ApplySafe: Company verification complete:', companyVerification);
     
-    // Check cache first
+    // Check cache first - but validate that cached data matches current job
     const cached = await getCachedAnalysis(url);
     if (cached && (Date.now() - cached.timestamp < CONFIG.CACHE_DURATION)) {
-      console.log('ApplySafe: Using cached analysis');
-      // Add fresh H1B data to cached result if available
-      if (companyVerification && companyVerification.h1bSponsorship) {
-        cached.companyVerification = cached.companyVerification || {};
-        cached.companyVerification.h1bSponsorship = companyVerification.h1bSponsorship;
+      // IMPORTANT: Verify the cached data is for the same job (not just same URL)
+      // This handles SPAs where URL might be reused or cached data might be stale
+      const cachedTitle = cached.jobTitle || cached.title;
+      const cachedCompany = cached.company;
+      const currentTitle = jobData.title;
+      const currentCompany = jobData.company;
+      
+      const titleMatches = cachedTitle && currentTitle && 
+        (cachedTitle.toLowerCase().includes(currentTitle.toLowerCase()) || 
+         currentTitle.toLowerCase().includes(cachedTitle.toLowerCase()));
+      const companyMatches = cachedCompany && currentCompany &&
+        cachedCompany.toLowerCase() === currentCompany.toLowerCase();
+      
+      if (titleMatches && companyMatches) {
+        console.log('ApplySafe: Using cached analysis (job matches)');
+        // Add fresh H1B data to cached result if available
+        if (companyVerification && companyVerification.h1bSponsorship) {
+          cached.companyVerification = cached.companyVerification || {};
+          cached.companyVerification.h1bSponsorship = companyVerification.h1bSponsorship;
+        }
+        // Update stats even for cached results (counts as a scan view)
+        await updateJobStats();
+        return { success: true, result: cached };
+      } else {
+        console.log('ApplySafe: Cache exists but job data changed, fetching fresh analysis');
+        console.log('  Cached:', { title: cachedTitle, company: cachedCompany });
+        console.log('  Current:', { title: currentTitle, company: currentCompany });
       }
-      // Update stats even for cached results (counts as a scan view)
-      await updateJobStats();
-      return { success: true, result: cached };
     }
     
     // Rate limiting (only for auto-analysis, skip for user-initiated)
@@ -1107,36 +1236,86 @@ async function cleanupCache() {
 // ==========================================
 
 /**
- * Generate AI cover letter
+ * Helper function to make authenticated API calls with automatic token refresh
  */
-async function generateCoverLetter(jobTitle, company, jobDescription, userSkills) {
-  try {
-    const authStatus = await auth.getAuthStatus();
-    if (!authStatus.isAuthenticated) {
-      return { success: false, error: 'not_authenticated', message: 'Please sign in to use AI features' };
-    }
+async function makeAuthenticatedRequest(endpoint, body, retryCount = 0) {
+  let authStatus = await auth.getAuthStatus();
+  if (!authStatus.isAuthenticated) {
+    console.log('❌ Not authenticated - no user or token in storage');
+    return { success: false, error: 'not_authenticated', message: 'Please sign in to use AI features' };
+  }
 
-    const response = await fetch(`${CONFIG.BACKEND_URL}/api/v3/generate-cover-letter`, {
+  console.log(`🔐 Making authenticated request to ${endpoint}...`);
+  console.log(`🔐 Token preview: ${authStatus.token?.substring(0, 20)}...`);
+  
+  let response;
+  try {
+    response = await fetch(`${CONFIG.BACKEND_URL}${endpoint}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${authStatus.token}`
       },
-      body: JSON.stringify({
-        jobTitle,
-        company,
-        jobDescription,
-        userSkills
-      })
+      body: JSON.stringify(body)
+    });
+  } catch (fetchError) {
+    console.error('❌ Network error:', fetchError);
+    return { success: false, error: 'network_error', message: 'Network error. Please check your connection.' };
+  }
+
+  console.log(`📡 Response status: ${response.status}`);
+
+  // If 401 and we haven't retried yet, try refreshing the token
+  if (response.status === 401 && retryCount === 0) {
+    console.log('🔄 Token invalid (401), attempting refresh...');
+    const refreshResult = await auth.refreshToken();
+    
+    if (refreshResult.success) {
+      console.log('✅ Token refreshed successfully, retrying request...');
+      return makeAuthenticatedRequest(endpoint, body, 1);
+    } else {
+      console.log('❌ Token refresh failed:', refreshResult.error);
+      return { 
+        success: false, 
+        error: 'session_expired', 
+        message: 'Session expired. Please sign out and sign back in.' 
+      };
+    }
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (e) {
+    console.error('❌ Failed to parse response JSON:', e);
+    return { success: false, error: 'parse_error', message: 'Server returned invalid response' };
+  }
+  
+  if (!response.ok) {
+    console.log('❌ Request failed with error:', data.error);
+    return { success: false, error: data.error || 'Request failed' };
+  }
+
+  return { success: true, data };
+}
+
+/**
+ * Generate AI cover letter
+ */
+async function generateCoverLetter(jobTitle, company, jobDescription, userSkills) {
+  try {
+    const result = await makeAuthenticatedRequest('/api/v3/generate-cover-letter', {
+      jobTitle,
+      company,
+      jobDescription,
+      userSkills
     });
 
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { success: false, error: data.error || 'Failed to generate cover letter' };
+    if (!result.success) {
+      return result;
     }
 
-    return { success: true, coverLetter: data.coverLetter };
+    return { success: true, coverLetter: result.data.coverLetter };
   } catch (error) {
     console.error('Cover letter generation error:', error);
     return { success: false, error: error.message };
@@ -1148,30 +1327,16 @@ async function generateCoverLetter(jobTitle, company, jobDescription, userSkills
  */
 async function analyzeResumeMatch(resumeText, jobDescription) {
   try {
-    const authStatus = await auth.getAuthStatus();
-    if (!authStatus.isAuthenticated) {
-      return { success: false, error: 'not_authenticated', message: 'Please sign in to use AI features' };
-    }
-
-    const response = await fetch(`${CONFIG.BACKEND_URL}/api/v3/analyze-resume`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authStatus.token}`
-      },
-      body: JSON.stringify({
-        resumeText,
-        jobDescription
-      })
+    const result = await makeAuthenticatedRequest('/api/v3/analyze-resume', {
+      resumeText,
+      jobDescription
     });
 
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { success: false, error: data.error || 'Failed to analyze resume' };
+    if (!result.success) {
+      return result;
     }
 
-    return { success: true, analysis: data.analysis };
+    return { success: true, analysis: result.data.analysis };
   } catch (error) {
     console.error('Resume analysis error:', error);
     return { success: false, error: error.message };
@@ -1183,31 +1348,17 @@ async function analyzeResumeMatch(resumeText, jobDescription) {
  */
 async function getInterviewPrep(jobTitle, company, industry) {
   try {
-    const authStatus = await auth.getAuthStatus();
-    if (!authStatus.isAuthenticated) {
-      return { success: false, error: 'not_authenticated', message: 'Please sign in to use AI features' };
-    }
-
-    const response = await fetch(`${CONFIG.BACKEND_URL}/api/v3/interview-prep`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authStatus.token}`
-      },
-      body: JSON.stringify({
-        jobTitle,
-        company,
-        industry
-      })
+    const result = await makeAuthenticatedRequest('/api/v3/interview-prep', {
+      jobTitle,
+      company,
+      industry
     });
 
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { success: false, error: data.error || 'Failed to get interview prep' };
+    if (!result.success) {
+      return result;
     }
 
-    return { success: true, prep: data.prep };
+    return { success: true, prep: result.data.prep || result.data.prepMaterials };
   } catch (error) {
     console.error('Interview prep error:', error);
     return { success: false, error: error.message };
@@ -1219,39 +1370,18 @@ async function getInterviewPrep(jobTitle, company, industry) {
  */
 async function chatWithAI(message, context = {}) {
   try {
-    const authStatus = await auth.getAuthStatus();
-    if (!authStatus.isAuthenticated) {
-      return { success: false, error: 'not_authenticated', message: 'Please sign in to use AI features' };
-    }
-
     console.log('🤖 Calling AI chat API...');
-    console.log('Token preview:', authStatus.token?.substring(0, 20) + '...');
-
-    const response = await fetch(`${CONFIG.BACKEND_URL}/api/v3/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authStatus.token}`
-      },
-      body: JSON.stringify({
-        message,
-        context
-      })
+    
+    const result = await makeAuthenticatedRequest('/api/v3/chat', {
+      message,
+      context
     });
 
-    console.log('📡 AI API response status:', response.status);
-    const data = await response.json();
-    console.log('📥 AI API response:', data);
-    
-    if (!response.ok) {
-      // If token is invalid, prompt re-login
-      if (response.status === 401) {
-        return { success: false, error: 'session_expired', message: 'Session expired. Please sign out and sign in again.' };
-      }
-      return { success: false, error: data.error || 'Failed to get AI response' };
+    if (!result.success) {
+      return result;
     }
 
-    return { success: true, reply: data.reply };
+    return { success: true, reply: result.data.reply };
   } catch (error) {
     console.error('AI chat error:', error);
     return { success: false, error: error.message };
@@ -1261,44 +1391,89 @@ async function chatWithAI(message, context = {}) {
 /**
  * Sync data to cloud
  */
-async function syncToCloud(applications, reminders) {
+async function syncToCloud(applications, reminders, scanHistory) {
   try {
+    // Check if user is authenticated first
     const authStatus = await auth.getAuthStatus();
-    if (!authStatus.isAuthenticated) {
+    if (!authStatus.isAuthenticated || !authStatus.token) {
+      console.log('⚠️ syncToCloud: User not authenticated, skipping sync');
       return { success: false, error: 'not_authenticated', message: 'Please sign in to sync data' };
     }
-
-    const response = await fetch(`${CONFIG.BACKEND_URL}/api/v3/sync`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authStatus.token}`
-      },
-      body: JSON.stringify({
-        applications,
-        reminders,
-        lastSyncedAt: Date.now()
-      })
+    
+    console.log('🔄 syncToCloud called with:', {
+      applications: applications?.length || 0,
+      reminders: reminders?.length || 0,
+      scanHistory: scanHistory?.length || 0
+    });
+    
+    const result = await makeAuthenticatedRequest('/api/v3/sync', {
+      applications,
+      reminders,
+      scanHistory,
+      lastSyncedAt: Date.now()
     });
 
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { success: false, error: data.error || 'Sync failed' };
+    if (!result.success) {
+      console.warn('⚠️ Sync failed:', result.error || result.message);
+      return result;
     }
 
+    console.log('✅ Sync successful, updating local storage');
+    
     // Update local storage with synced data
     await chrome.storage.local.set({
-      applications: data.applications,
-      reminders: data.reminders,
+      applications: result.data.applications,
+      reminders: result.data.reminders,
+      recentScans: result.data.scanHistory,  // Save as recentScans for compatibility
       lastCloudSync: Date.now()
     });
 
-    return { success: true, data };
+    return { success: true, data: result.data };
   } catch (error) {
-    console.error('Cloud sync error:', error);
+    console.warn('⚠️ Cloud sync error:', error.message);
     return { success: false, error: error.message };
   }
+}
+
+/**
+ * Helper function for authenticated GET requests with token refresh
+ */
+async function makeAuthenticatedGetRequest(endpoint, retryCount = 0) {
+  let authStatus = await auth.getAuthStatus();
+  if (!authStatus.isAuthenticated) {
+    return { success: false, error: 'not_authenticated', message: 'Please sign in' };
+  }
+
+  const response = await fetch(`${CONFIG.BACKEND_URL}${endpoint}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${authStatus.token}`
+    }
+  });
+
+  // If 401 and we haven't retried yet, try refreshing the token
+  if (response.status === 401 && retryCount === 0) {
+    console.log('🔄 Token invalid on GET, attempting refresh...');
+    const refreshResult = await auth.refreshToken();
+    
+    if (refreshResult.success) {
+      return makeAuthenticatedGetRequest(endpoint, 1);
+    } else {
+      return { 
+        success: false, 
+        error: 'session_expired', 
+        message: 'Session expired. Please sign out and sign back in.' 
+      };
+    }
+  }
+
+  const data = await response.json();
+  
+  if (!response.ok) {
+    return { success: false, error: data.error || 'Request failed' };
+  }
+
+  return { success: true, data };
 }
 
 /**
@@ -1306,34 +1481,30 @@ async function syncToCloud(applications, reminders) {
  */
 async function syncFromCloud() {
   try {
+    // Check if user is authenticated first
     const authStatus = await auth.getAuthStatus();
-    if (!authStatus.isAuthenticated) {
+    if (!authStatus.isAuthenticated || !authStatus.token) {
+      console.log('⚠️ syncFromCloud: User not authenticated, skipping sync');
       return { success: false, error: 'not_authenticated', message: 'Please sign in to sync data' };
     }
-
-    const response = await fetch(`${CONFIG.BACKEND_URL}/api/v3/sync`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${authStatus.token}`
-      }
-    });
-
-    const data = await response.json();
     
-    if (!response.ok) {
-      return { success: false, error: data.error || 'Sync failed' };
+    const result = await makeAuthenticatedGetRequest('/api/v3/sync');
+    
+    if (!result.success) {
+      console.warn('⚠️ Sync from cloud failed:', result.error || result.message);
+      return result;
     }
 
     // Update local storage with cloud data
     await chrome.storage.local.set({
-      applications: data.applications || [],
-      reminders: data.reminders || [],
+      applications: result.data.applications || [],
+      reminders: result.data.reminders || [],
       lastCloudSync: Date.now()
     });
 
-    return { success: true, data };
+    return { success: true, data: result.data };
   } catch (error) {
-    console.error('Cloud sync error:', error);
+    console.warn('⚠️ Cloud sync error:', error.message);
     return { success: false, error: error.message };
   }
 }
@@ -1463,5 +1634,57 @@ chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) =
     chrome.notifications.clear(notificationId);
   }
 });
+
+// Create Stripe checkout session
+async function createCheckoutSession() {
+  try {
+    console.log('🛒 Creating checkout session...');
+    
+    const authStatus = await auth.getAuthStatus();
+    const email = authStatus.user?.email;
+    
+    console.log('📧 Auth status:', { authenticated: !!authStatus.authenticated, email });
+    
+    const payload = {
+      priceId: 'price_1SeNEXRvKQf7z4L6T9GroSYi'
+    };
+    
+    if (email) {
+      payload.customerEmail = email;
+    }
+    
+    console.log('📤 Sending payload to backend:', payload);
+    
+    const response = await fetch(`${CONFIG.BACKEND_URL}/api/create-checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    console.log('📬 Response status:', response.status, response.statusText);
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('❌ Checkout error:', errorData);
+      return { error: errorData.error || `Server error: ${response.status}` };
+    }
+    
+    const data = await response.json();
+    console.log('✅ Got checkout URL:', data.url ? 'Yes' : 'No');
+    
+    if (data && data.url) {
+      // Open checkout URL in new tab
+      console.log('🔗 Opening Stripe checkout in new tab');
+      chrome.tabs.create({ url: data.url });
+      return { success: true, url: data.url };
+    } else {
+      console.error('❌ No URL in response:', data);
+      return { error: 'No checkout URL returned', data };
+    }
+  } catch (e) {
+    console.error('💥 Stripe checkout error:', e);
+    return { error: e.message };
+  }
+}
 
 console.log('ApplySafe background service worker loaded');

@@ -9,6 +9,9 @@ const elements = {
   userAccountSection: document.getElementById('userAccountSection'),
   anonymousUser: document.getElementById('anonymousUser'),
   signedInUser: document.getElementById('signedInUser'),
+  emailSignInForm: document.getElementById('emailSignInForm'),
+  emailInput: document.getElementById('emailInput'),
+  emailSignInBtn: document.getElementById('emailSignInBtn'),
   googleSignInBtn: document.getElementById('googleSignInBtn'),
   signOutBtn: document.getElementById('signOutBtn'),
   userAvatar: document.getElementById('userAvatar'),
@@ -98,6 +101,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadAuthStatus();
     await loadSubscriptionStatus();
     await loadStats();
+    await cleanupBadRecentScans(); // Clean up any bad data first
     await loadRecentScans();
     setupEventListeners();
     await analyzeCurrentPage();
@@ -107,6 +111,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     showError('Failed to initialize extension');
   }
 });
+
+// Clean up any bad/invalid entries from recent scans
+async function cleanupBadRecentScans() {
+  try {
+    const result = await chrome.storage.local.get(['recentScans']);
+    let recentScans = result.recentScans || [];
+    const originalCount = recentScans.length;
+    
+    // Filter out entries that look like LinkedIn profile headlines
+    recentScans = recentScans.filter(scan => {
+      const title = scan.jobTitle || '';
+      
+      // Check for profile headline indicators
+      const pipeCount = (title.match(/\|/g) || []).length;
+      const looksLikeHeadline = pipeCount >= 2 || 
+        /passionate about|looking for|seeking|open to|helping|building|connecting/i.test(title);
+      
+      if (looksLikeHeadline) {
+        console.log('Removing bad recent scan entry:', title.substring(0, 50));
+        return false;
+      }
+      return true;
+    });
+    
+    if (recentScans.length !== originalCount) {
+      console.log(`Cleaned up ${originalCount - recentScans.length} bad recent scan entries`);
+      await chrome.storage.local.set({ recentScans });
+    }
+  } catch (error) {
+    console.error('Error cleaning up recent scans:', error);
+  }
+}
 
 // Load and apply theme
 async function loadTheme() {
@@ -142,8 +178,23 @@ function toggleTheme() {
 
 // Setup event listeners
 function setupEventListeners() {
-  elements.googleSignInBtn.addEventListener('click', handleGoogleSignIn);
-  elements.signOutBtn.addEventListener('click', handleSignOut);
+  elements.emailSignInBtn.addEventListener('click', () => {
+    console.log('📧 Email Sign In button clicked');
+    handleEmailSignIn();
+  });
+  
+  elements.emailInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') handleEmailSignIn();
+  });
+  
+  elements.googleSignInBtn.addEventListener('click', () => {
+    console.log('🔘 Sign In button clicked');
+    handleGoogleSignIn();
+  });
+  elements.signOutBtn.addEventListener('click', () => {
+    console.log('🔘 Sign Out button clicked');
+    handleSignOut();
+  });
   elements.upgradeBtn.addEventListener('click', handleUpgrade);
   elements.refreshAnalysis.addEventListener('click', handleRefresh);
   elements.checkUrlBtn.addEventListener('click', handleUrlCheck);
@@ -209,13 +260,75 @@ async function loadAuthStatus() {
   }
 }
 
+// Handle Email Sign In
+async function handleEmailSignIn() {
+  const email = elements.emailInput.value.trim();
+  
+  if (!email) {
+    alert('Please enter your email');
+    return;
+  }
+  
+  if (!email.includes('@')) {
+    alert('Please enter a valid email');
+    return;
+  }
+  
+  console.log('📧 Email sign-in starting:', email);
+  
+  try {
+    elements.emailSignInBtn.disabled = true;
+    elements.emailSignInBtn.textContent = 'Signing in...';
+    
+    const response = await chrome.runtime.sendMessage({
+      action: 'signInWithEmail',
+      email: email,
+      name: email.split('@')[0]
+    });
+    
+    console.log('📧 Email sign-in response:', response);
+    
+    if (response && response.success) {
+      console.log('✅ Email sign-in successful!');
+      elements.emailInput.value = '';
+      await loadAuthStatus();
+    } else {
+      alert(`Sign-in failed: ${response?.error || 'Unknown error'}`);
+      elements.emailSignInBtn.disabled = false;
+      elements.emailSignInBtn.textContent = 'Sign In';
+    }
+  } catch (error) {
+    console.error('❌ Email sign-in error:', error);
+    alert('Sign-in failed: ' + error.message);
+    elements.emailSignInBtn.disabled = false;
+    elements.emailSignInBtn.textContent = 'Sign In';
+  }
+}
+
 // Handle Google Sign In
 async function handleGoogleSignIn() {
+  console.log('🚀 handleGoogleSignIn called');
+  console.log('🔍 chrome.runtime available:', !!chrome.runtime);
+  console.log('🔍 chrome.runtime.sendMessage available:', !!chrome.runtime?.sendMessage);
   try {
     elements.googleSignInBtn.disabled = true;
     elements.googleSignInBtn.textContent = 'Signing in...';
     
-    const response = await chrome.runtime.sendMessage({ action: 'signInWithGoogle' });
+    console.log('📤 Sending signInWithGoogle message...');
+    let response;
+    try {
+      response = await chrome.runtime.sendMessage({ action: 'signInWithGoogle' });
+    } catch (msgError) {
+      console.error('❌ Message sending failed:', msgError.message);
+      // Reset button
+      elements.googleSignInBtn.disabled = false;
+      elements.googleSignInBtn.innerHTML = `<svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Sign in with Google`;
+      showError('Sign in failed: ' + msgError.message);
+      throw msgError;
+    }
+    console.log('📥 Sign in response:', response);
+    console.log('📥 Response type:', typeof response);
+    console.log('📥 Response stringified:', JSON.stringify(response));
     
     if (response && response.success) {
       // Reload auth status
@@ -223,7 +336,9 @@ async function handleGoogleSignIn() {
       await loadSubscriptionStatus();
       showSuccess('Successfully signed in!');
     } else {
-      showError(response.error || 'Failed to sign in');
+      const errorMsg = response?.error || 'Failed to sign in';
+      console.error('❌ Sign in failed:', errorMsg);
+      showError(errorMsg);
       elements.googleSignInBtn.disabled = false;
       elements.googleSignInBtn.innerHTML = `
         <svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
@@ -244,8 +359,11 @@ async function handleGoogleSignIn() {
 
 // Handle Sign Out
 async function handleSignOut() {
+  console.log('🚀 handleSignOut called');
   try {
+    console.log('📤 Sending signOut message...');
     const response = await chrome.runtime.sendMessage({ action: 'signOut' });
+    console.log('📥 Sign out response:', response);
     
     if (response && response.success) {
       await loadAuthStatus();
@@ -320,15 +438,22 @@ async function loadSubscriptionStatus() {
 // Handle upgrade button click
 async function handleUpgrade() {
   try {
+    console.log('🛒 Upgrade button clicked, sending to background...');
     const response = await chrome.runtime.sendMessage({ action: 'startCheckout' });
+    console.log('📬 Background response:', response);
+    
     if (response && response.success) {
       showToast('Opening checkout...', 'success');
+    } else if (response && response.error) {
+      console.error('Checkout error from background:', response.error);
+      showToast(`Checkout failed: ${response.error}`, 'error');
     } else {
+      console.error('Unknown response:', response);
       showToast('Failed to open checkout', 'error');
     }
   } catch (error) {
     console.error('Upgrade error:', error);
-    showToast('Error starting checkout', 'error');
+    showToast('Error starting checkout. Check console for details.', 'error');
   }
 }
 
@@ -401,6 +526,10 @@ async function loadRecentScans() {
 
 // Analyze current page
 async function analyzeCurrentPage() {
+  // Clear any previous analysis state
+  console.log('========= ANALYZE CURRENT PAGE CALLED =========');
+  currentAnalysis = null;
+  
   showLoading();
   
   try {
@@ -408,7 +537,8 @@ async function analyzeCurrentPage() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     currentTabUrl = tab.url;
     
-    console.log('Analyzing tab:', tab.url);
+    console.log('📍 Current tab URL:', tab.url);
+    console.log('📍 Current tab title:', tab.title);
     
     // Check if it's a job posting site
     if (!isJobSite(tab.url)) {
@@ -416,6 +546,9 @@ async function analyzeCurrentPage() {
       showNoJobState();
       return;
     }
+    
+    // Clear caches first to ensure fresh analysis
+    await clearCachedAnalysis(tab.url);
     
     // Request analysis from content script with retry first
     let retries = 3;
@@ -433,8 +566,8 @@ async function analyzeCurrentPage() {
           console.log('Could not trigger reprocess');
         }
         
-        // Now get the job data
-        response = await chrome.tabs.sendMessage(tab.id, { action: 'getJobData' });
+        // Now get the job data - always request fresh data
+        response = await chrome.tabs.sendMessage(tab.id, { action: 'getJobData', forceRefresh: true });
         
         if (response?.jobData) {
           console.log('Job data received from content script:', {
@@ -442,6 +575,9 @@ async function analyzeCurrentPage() {
             company: response.jobData.company,
             url: response.jobData.url
           });
+          
+          // Clear any existing cache for this URL to ensure fresh analysis
+          await clearCachedAnalysis(response.jobData.url || tab.url);
           break;
         }
         
@@ -467,10 +603,30 @@ async function analyzeCurrentPage() {
     // The service worker has its own smarter caching
     
     if (response && response.jobData) {
+      // Validate the job data doesn't look like a profile headline
+      const title = response.jobData.title || '';
+      const pipeCount = (title.match(/\|/g) || []).length;
+      const looksLikeHeadline = pipeCount >= 2 || 
+        /passionate about|looking for|seeking|open to|helping|building|connecting/i.test(title);
+      
+      if (looksLikeHeadline) {
+        console.warn('Job data looks like a LinkedIn profile headline, skipping analysis');
+        console.log('Extracted title:', title);
+        showNoJobState();
+        return;
+      }
+      
       console.log('Sending job data for analysis...');
       
       // Use the job's URL from the job data (more accurate than tab.url)
       const jobUrl = response.jobData.url || tab.url;
+      
+      // Clear service worker cache for this URL to ensure fresh analysis
+      try {
+        await chrome.runtime.sendMessage({ action: 'clearCache' });
+      } catch (e) {
+        console.log('Could not clear service worker cache:', e);
+      }
       
       // Send to background for AI analysis
       const analysis = await chrome.runtime.sendMessage({
@@ -485,6 +641,13 @@ async function analyzeCurrentPage() {
         await cacheAnalysis(jobUrl, analysis.result);
         await updateStats(analysis.result);
         await addToRecentScans(jobUrl, response.jobData, analysis.result);
+        
+        // Notify dashboard to refresh data
+        try {
+          chrome.runtime.sendMessage({ action: 'scanAdded' }).catch(() => {});
+        } catch (e) {
+          console.log('Could not notify dashboard:', e);
+        }
         
         // Reload subscription status after scan
         await loadSubscriptionStatus();
@@ -865,10 +1028,29 @@ async function handleRefresh() {
   elements.refreshAnalysis.classList.add('spinning');
   
   try {
-    console.log('Manual refresh triggered');
+    console.log('Manual refresh triggered - clearing all caches');
     
     // Get current tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    
+    // Clear ALL caches first - this is important for getting fresh data
+    try {
+      await chrome.runtime.sendMessage({ action: 'clearCache' });
+      console.log('Service worker cache cleared');
+    } catch (e) {
+      console.log('Could not clear service worker cache:', e);
+    }
+    
+    // Clear popup's cached analysis
+    if (currentTabUrl) {
+      await clearCachedAnalysis(currentTabUrl);
+    }
+    if (tab.url) {
+      await clearCachedAnalysis(tab.url);
+    }
+    
+    // Clear current analysis state
+    currentAnalysis = null;
     
     // Force content script to re-extract job data
     try {
@@ -878,13 +1060,8 @@ async function handleRefresh() {
       console.log('Could not trigger content script re-analysis:', error);
     }
     
-    // Clear cache for current URL
-    if (currentTabUrl) {
-      await clearCachedAnalysis(currentTabUrl);
-    }
-    
-    // Wait a moment for content script to process
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Wait for content script to process
+    await new Promise(resolve => setTimeout(resolve, 1500));
     
     // Re-analyze
     await analyzeCurrentPage();
@@ -1018,11 +1195,28 @@ async function clearCachedAnalysis(url) {
 async function updateStats(analysis) {
   try {
     const result = await chrome.storage.local.get(['stats']);
-    const stats = result.stats || { scamsBlocked: 0, jobsScanned: 0 };
+    const stats = result.stats || { scamsBlocked: 0, jobsScanned: 0, dailyActivity: [0, 0, 0, 0, 0, 0, 0] };
     
     stats.jobsScanned++;
     if (analysis.riskScore > 60) {
       stats.scamsBlocked++;
+    }
+    
+    // Update daily activity tracking
+    if (!stats.dailyActivity) {
+      stats.dailyActivity = [0, 0, 0, 0, 0, 0, 0];
+    }
+    
+    // Get today's date and check if we need to shift the array
+    const today = new Date().toDateString();
+    if (!stats.lastActivityDate || stats.lastActivityDate !== today) {
+      // New day - shift the array and add new day at beginning
+      stats.dailyActivity.pop();  // Remove oldest day
+      stats.dailyActivity.unshift(1);  // Add today's data
+      stats.lastActivityDate = today;
+    } else {
+      // Same day - increment today's count
+      stats.dailyActivity[0] = (stats.dailyActivity[0] || 0) + 1;
     }
     
     await chrome.storage.local.set({ stats });
@@ -1035,24 +1229,46 @@ async function updateStats(analysis) {
 // Add to recent scans
 async function addToRecentScans(url, jobData, analysis) {
   try {
-    const result = await chrome.storage.local.get(['recentScans']);
-    const recentScans = result.recentScans || [];
+    console.log('addToRecentScans called with:', {
+      url,
+      jobData: { title: jobData?.title, company: jobData?.company },
+      analysis: { jobTitle: analysis?.jobTitle, company: analysis?.company, riskScore: analysis?.riskScore }
+    });
     
-    // Add new scan at the beginning
-    recentScans.unshift({
+    const result = await chrome.storage.local.get(['recentScans']);
+    let recentScans = result.recentScans || [];
+    
+    // Create the new scan entry
+    const newScan = {
       url,
       jobTitle: jobData.title || analysis.jobTitle,
       company: jobData.company || analysis.company,
       riskScore: analysis.riskScore,
       timestamp: Date.now()
-    });
+    };
+    
+    console.log('New scan object:', newScan);
+    
+    // Remove any existing entries with the same URL (to avoid duplicates)
+    recentScans = recentScans.filter(scan => scan.url !== url);
+    
+    // Also remove if same job title and company (different URL but same job)
+    recentScans = recentScans.filter(scan => 
+      !(scan.jobTitle === newScan.jobTitle && scan.company === newScan.company)
+    );
+    
+    // Add new scan at the beginning
+    recentScans.unshift(newScan);
     
     // Keep only last 50 scans
     if (recentScans.length > 50) {
       recentScans.pop();
     }
     
+    console.log('Saving recentScans to storage:', recentScans.length, 'items');
     await chrome.storage.local.set({ recentScans });
+    console.log('✅ recentScans saved successfully');
+    
     await loadRecentScans();
   } catch (error) {
     console.error('Error saving recent scan:', error);

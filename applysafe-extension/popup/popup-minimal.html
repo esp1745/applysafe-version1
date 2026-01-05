@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=360, height=500">
+  <title>ApplySafe</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      width: 360px;
+      min-height: 200px;
+      max-height: 500px;
+      overflow-y: auto;
+      background: #ffffff;
+      color: #1a1a2e;
+    }
+
+    /* Dark mode */
+    body.dark {
+      background: #1a1a2e;
+      color: #f0f0f5;
+    }
+
+    .container {
+      padding: 16px;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .logo-section {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo {
+      width: 32px;
+      height: 32px;
+    }
+
+    .logo svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .brand {
+      font-size: 18px;
+      font-weight: 700;
+      color: #10b981;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .icon-btn {
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: #f3f4f6;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    body.dark .icon-btn {
+      background: #2d2d44;
+    }
+
+    .icon-btn:hover {
+      background: #e5e7eb;
+      transform: scale(1.05);
+    }
+
+    body.dark .icon-btn:hover {
+      background: #3d3d5c;
+    }
+
+    .icon-btn svg {
+      width: 18px;
+      height: 18px;
+      stroke: #6b7280;
+    }
+
+    body.dark .icon-btn svg {
+      stroke: #9ca3af;
+    }
+
+    /* User Section */
+    .user-section {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 16px;
+      color: white;
+    }
+
+    .user-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .user-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.3);
+    }
+
+    .user-info {
+      flex: 1;
+    }
+
+    .user-name {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .user-email {
+      font-size: 12px;
+      opacity: 0.9;
+    }
+
+    .signout-btn {
+      background: rgba(255,255,255,0.2);
+      border: none;
+      border-radius: 6px;
+      padding: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .signout-btn:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .signout-btn svg {
+      width: 18px;
+      height: 18px;
+      stroke: white;
+    }
+
+    .signin-section {
+      background: #f3f4f6;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+
+    body.dark .signin-section {
+      background: #2d2d44;
+    }
+
+    .google-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 12px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    body.dark .google-btn {
+      background: #1a1a2e;
+      border-color: #3d3d5c;
+      color: #f0f0f5;
+    }
+
+    .google-btn:hover {
+      background: #f9fafb;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    /* Risk Card */
+    .risk-card {
+      background: #f9fafb;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+
+    body.dark .risk-card {
+      background: #2d2d44;
+    }
+
+    .risk-score-circle {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 12px;
+      font-size: 32px;
+      font-weight: 700;
+      position: relative;
+    }
+
+    .risk-score-circle::before {
+      content: '';
+      position: absolute;
+      inset: 4px;
+      border-radius: 50%;
+      background: white;
+    }
+
+    body.dark .risk-score-circle::before {
+      background: #1a1a2e;
+    }
+
+    .risk-score-circle span {
+      position: relative;
+      z-index: 1;
+    }
+
+    .risk-safe {
+      background: conic-gradient(#10b981 0deg, #10b981 calc(var(--score) * 3.6deg), #e5e7eb calc(var(--score) * 3.6deg));
+      color: #10b981;
+    }
+
+    .risk-medium {
+      background: conic-gradient(#f59e0b 0deg, #f59e0b calc(var(--score) * 3.6deg), #e5e7eb calc(var(--score) * 3.6deg));
+      color: #f59e0b;
+    }
+
+    .risk-high {
+      background: conic-gradient(#ef4444 0deg, #ef4444 calc(var(--score) * 3.6deg), #e5e7eb calc(var(--score) * 3.6deg));
+      color: #ef4444;
+    }
+
+    .risk-label {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .job-title {
+      font-size: 14px;
+      color: #6b7280;
+      margin-bottom: 2px;
+    }
+
+    body.dark .job-title {
+      color: #9ca3af;
+    }
+
+    .company-name {
+      font-size: 13px;
+      color: #9ca3af;
+    }
+
+    /* H1B Badge */
+    .h1b-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #ecfdf5;
+      color: #059669;
+      padding: 8px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      margin-top: 12px;
+    }
+
+    body.dark .h1b-badge {
+      background: rgba(16, 185, 129, 0.15);
+    }
+
+    .h1b-badge.not-found {
+      background: #fef3c7;
+      color: #d97706;
+    }
+
+    body.dark .h1b-badge.not-found {
+      background: rgba(245, 158, 11, 0.15);
+    }
+
+    /* Quick Actions */
+    .quick-actions {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .action-btn {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 12px;
+      background: #f3f4f6;
+      border: none;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: #374151;
+    }
+
+    body.dark .action-btn {
+      background: #2d2d44;
+      color: #e5e7eb;
+    }
+
+    .action-btn:hover {
+      background: #e5e7eb;
+      transform: translateY(-1px);
+    }
+
+    body.dark .action-btn:hover {
+      background: #3d3d5c;
+    }
+
+    .action-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .action-btn.primary {
+      background: #10b981;
+      color: white;
+    }
+
+    .action-btn.primary:hover {
+      background: #059669;
+    }
+
+    /* Loading State */
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #6b7280;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #e5e7eb;
+      border-top-color: #10b981;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 12px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* No Job State */
+    .no-job {
+      text-align: center;
+      padding: 30px 20px;
+      color: #6b7280;
+    }
+
+    .no-job-icon {
+      font-size: 40px;
+      margin-bottom: 12px;
+    }
+
+    .no-job h3 {
+      font-size: 16px;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+
+    body.dark .no-job h3 {
+      color: #e5e7eb;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding-top: 12px;
+      border-top: 1px solid #e5e7eb;
+      font-size: 11px;
+      color: #9ca3af;
+    }
+
+    body.dark .footer {
+      border-color: #3d3d5c;
+    }
+
+    .footer a {
+      color: #10b981;
+      text-decoration: none;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #1a1a2e;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 1000;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    .toast.success {
+      background: #059669;
+    }
+
+    .toast.error {
+      background: #dc2626;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo-section">
+        <div class="logo">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M12 2L3 7V12C3 16.97 7.02 21.5 12 22.5C16.98 21.5 21 16.97 21 12V7L12 2Z" fill="url(#g)"/>
+            <path d="M10 15.5L7.5 13L8.91 11.59L10 12.67L14.59 8.09L16 9.5L10 15.5Z" fill="white"/>
+            <defs><linearGradient id="g" x1="3" y1="2" x2="21" y2="22"><stop stop-color="#10B981"/><stop offset="1" stop-color="#059669"/></linearGradient></defs>
+          </svg>
+        </div>
+        <span class="brand">ApplySafe</span>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="toggleTheme" title="Toggle theme">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="openDashboard" title="Dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+            <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- User Section - Signed In -->
+    <div class="user-section" id="signedInUser" style="display: none;">
+      <div class="user-row">
+        <img class="user-avatar" id="userAvatar" src="" alt="">
+        <div class="user-info">
+          <div class="user-name" id="userName">User</div>
+          <div class="user-email" id="userEmail">email@example.com</div>
+        </div>
+        <button class="signout-btn" id="signOutBtn" title="Sign out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Sign In Section -->
+    <div class="signin-section" id="anonymousUser">
+      <button class="google-btn" id="googleSignInBtn">
+        <svg width="18" height="18" viewBox="0 0 48 48">
+          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        </svg>
+        Sign in with Google
+      </button>
+    </div>
+
+    <!-- Loading State -->
+    <div class="loading" id="loadingState" style="display: none;">
+      <div class="spinner"></div>
+      <div>Analyzing job posting...</div>
+    </div>
+
+    <!-- No Job State -->
+    <div class="no-job" id="noJobState" style="display: none;">
+      <div class="no-job-icon">🔍</div>
+      <h3>No Job Posting Detected</h3>
+      <p>Navigate to a job listing to analyze it</p>
+    </div>
+
+    <!-- Risk Card -->
+    <div class="risk-card" id="riskCard" style="display: none;">
+      <div class="risk-score-circle risk-safe" id="riskCircle" style="--score: 15;">
+        <span id="riskScore">15</span>
+      </div>
+      <div class="risk-label" id="riskLabel">Looks Safe ✓</div>
+      <div class="job-title" id="jobTitle">Job Title</div>
+      <div class="company-name" id="companyName">Company</div>
+      
+      <div class="h1b-badge" id="h1bBadge">
+        <span>✅</span>
+        <span id="h1bText">Verified H-1B Sponsor</span>
+      </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+      <button class="action-btn" id="refreshBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+        </svg>
+        Refresh
+      </button>
+      <button class="action-btn primary" id="dashboardBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+        </svg>
+        AI Chat
+      </button>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <a href="#" id="helpLink">Help</a> • <a href="#" id="privacyLink">Privacy</a> • Powered by AI
+    </footer>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script src="popup-minimal.js"></script>
+</body>
+</html>

@@ -38,16 +38,19 @@
           </svg>
           <span>Overview</span>
         </a>
-        <a href="#" class="nav-item" data-tab="applications">
+        <a href="#" class="nav-item" data-tab="scan-history">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-            <line x1="16" y1="13" x2="8" y2="13"/>
-            <line x1="16" y1="17" x2="8" y2="17"/>
-            <polyline points="10 9 9 9 8 9"/>
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
           </svg>
-          <span>Applications</span>
-          <span class="badge" id="appCount">0</span>
+          <span>Scan History</span>
+        </a>
+        <a href="#" class="nav-item" data-tab="whitelist">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          <span>Whitelist</span>
         </a>
         <a href="#" class="nav-item" data-tab="ai-tools">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -57,22 +60,7 @@
           <span>AI Tools</span>
           <span class="pro-badge">PRO</span>
         </a>
-        <a href="#" class="nav-item" data-tab="reminders">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-          </svg>
-          <span>Reminders</span>
-          <span class="badge" id="reminderCount">0</span>
-        </a>
-        <a href="#" class="nav-item" data-tab="analytics">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="20" x2="18" y2="10"/>
-            <line x1="12" y1="20" x2="12" y2="4"/>
-            <line x1="6" y1="20" x2="6" y2="14"/>
-          </svg>
-          <span>Analytics</span>
-        </a>
+
         <a href="#" class="nav-item" data-tab="settings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"/>
@@ -118,6 +106,14 @@
           <p id="pageDescription">Track your job search progress</p>
         </div>
         <div class="header-right">
+          <button class="btn btn-secondary" id="refreshDataBtn" title="Refresh data">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+              <path d="M21 3v5h-5"/>
+              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+              <path d="M3 21v-5h5"/>
+            </svg>
+          </button>
           <button class="btn btn-secondary" id="syncBtn">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="23 4 23 10 17 10"/>
@@ -126,13 +122,6 @@
             </svg>
             Sync
           </button>
-          <button class="btn btn-primary" id="addApplicationBtn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19"/>
-              <line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            Add Application
-          </button>
         </div>
       </header>
 
@@ -140,192 +129,69 @@
       <div class="tab-content">
         <!-- Overview Tab -->
         <section id="overview-tab" class="tab-pane active">
-          <!-- Stats Cards -->
-          <div class="stats-grid">
-            <div class="stat-card">
-              <div class="stat-icon safe">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                  <polyline points="22 4 12 14.01 9 11.01"/>
-                </svg>
+          <div class="analytics-grid">
+            <!-- Key Metrics -->
+            <div class="analytics-card">
+              <h3>Scam Detection Rate</h3>
+              <div class="metric-display">
+                <span class="metric-value" id="scamDetectionRate">0%</span>
               </div>
-              <div class="stat-details">
-                <span class="stat-value" id="totalApplications">0</span>
-                <span class="stat-label">Total Applications</span>
-              </div>
+              <p class="metric-description">Percentage of jobs identified as scams</p>
             </div>
-            <div class="stat-card">
-              <div class="stat-icon primary">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10"/>
-                  <polyline points="12 6 12 12 16 14"/>
-                </svg>
+            <div class="analytics-card">
+              <h3>Jobs Scanned</h3>
+              <div class="metric-display">
+                <span class="metric-value" id="totalJobsScanned">0</span>
               </div>
-              <div class="stat-details">
-                <span class="stat-value" id="pendingApps">0</span>
-                <span class="stat-label">Pending Response</span>
-              </div>
+              <p class="metric-description">Total job postings analyzed</p>
             </div>
-            <div class="stat-card">
-              <div class="stat-icon warning">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                  <circle cx="8.5" cy="7" r="4"/>
-                  <line x1="20" y1="8" x2="20" y2="14"/>
-                  <line x1="23" y1="11" x2="17" y2="11"/>
-                </svg>
+            <div class="analytics-card">
+              <h3>Scams Blocked</h3>
+              <div class="metric-display">
+                <span class="metric-value danger" id="scamsBlocked">0</span>
               </div>
-              <div class="stat-details">
-                <span class="stat-value" id="interviewCount">0</span>
-                <span class="stat-label">Interviews Scheduled</span>
-              </div>
+              <p class="metric-description">Fraudulent postings detected</p>
             </div>
-            <div class="stat-card">
-              <div class="stat-icon danger">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                  <line x1="12" y1="9" x2="12" y2="13"/>
-                  <line x1="12" y1="17" x2="12.01" y2="17"/>
-                </svg>
+            <div class="analytics-card">
+              <h3>Safe Jobs Found</h3>
+              <div class="metric-display">
+                <span class="metric-value safe" id="safeJobsCount">0</span>
               </div>
-              <div class="stat-details">
-                <span class="stat-value" id="scamsDetected">0</span>
-                <span class="stat-label">Scams Blocked</span>
-              </div>
+              <p class="metric-description">Legitimate opportunities identified</p>
             </div>
-          </div>
 
-          <!-- Charts Row -->
-          <div class="charts-row">
-            <div class="chart-card">
-              <h3>Application Status</h3>
-              <div class="chart-container" id="statusChart">
-                <div class="donut-chart">
-                  <svg viewBox="0 0 36 36" class="donut">
-                    <circle cx="18" cy="18" r="15.9155" class="donut-hole"/>
-                    <circle cx="18" cy="18" r="15.9155" class="donut-ring"/>
-                    <circle cx="18" cy="18" r="15.9155" class="donut-segment applied" stroke-dasharray="40 60" stroke-dashoffset="25"/>
-                    <circle cx="18" cy="18" r="15.9155" class="donut-segment interviewing" stroke-dasharray="20 80" stroke-dashoffset="85"/>
-                    <circle cx="18" cy="18" r="15.9155" class="donut-segment offered" stroke-dasharray="10 90" stroke-dashoffset="65"/>
-                    <circle cx="18" cy="18" r="15.9155" class="donut-segment rejected" stroke-dasharray="30 70" stroke-dashoffset="55"/>
-                  </svg>
-                  <div class="donut-center">
-                    <span class="donut-value" id="chartTotal">0</span>
-                    <span class="donut-label">Total</span>
-                  </div>
+            <!-- Top Job Sources -->
+            <div class="analytics-card full-width">
+              <h3>Top Job Sources</h3>
+              <div class="source-list" id="topSources">
+                <div class="source-item">
+                  <span>LinkedIn</span>
+                  <div class="source-bar" style="width: 70%"></div>
+                  <span>70%</span>
                 </div>
-                <div class="chart-legend">
-                  <div class="legend-item"><span class="legend-color applied"></span> Applied</div>
-                  <div class="legend-item"><span class="legend-color interviewing"></span> Interviewing</div>
-                  <div class="legend-item"><span class="legend-color offered"></span> Offered</div>
-                  <div class="legend-item"><span class="legend-color rejected"></span> Rejected</div>
+                <div class="source-item">
+                  <span>Indeed</span>
+                  <div class="source-bar" style="width: 20%"></div>
+                  <span>20%</span>
+                </div>
+                <div class="source-item">
+                  <span>Other</span>
+                  <div class="source-bar" style="width: 10%"></div>
+                  <span>10%</span>
                 </div>
               </div>
             </div>
-            <div class="chart-card">
-              <h3>Weekly Activity</h3>
-              <div class="chart-container" id="activityChart">
-                <div class="bar-chart">
-                  <div class="bar-item">
-                    <div class="bar" style="height: 60%"></div>
-                    <span>Mon</span>
-                  </div>
-                  <div class="bar-item">
-                    <div class="bar" style="height: 80%"></div>
-                    <span>Tue</span>
-                  </div>
-                  <div class="bar-item">
-                    <div class="bar" style="height: 40%"></div>
-                    <span>Wed</span>
-                  </div>
-                  <div class="bar-item">
-                    <div class="bar" style="height: 90%"></div>
-                    <span>Thu</span>
-                  </div>
-                  <div class="bar-item">
-                    <div class="bar" style="height: 70%"></div>
-                    <span>Fri</span>
-                  </div>
-                  <div class="bar-item">
-                    <div class="bar" style="height: 30%"></div>
-                    <span>Sat</span>
-                  </div>
-                  <div class="bar-item">
-                    <div class="bar" style="height: 20%"></div>
-                    <span>Sun</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
 
-          <!-- Recent Applications -->
-          <div class="section">
-            <div class="section-header">
-              <h3>Recent Applications</h3>
-              <a href="#" class="view-all" data-tab="applications">View All →</a>
-            </div>
-            <div class="applications-list" id="recentApplications">
-              <div class="empty-state">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                  <polyline points="14 2 14 8 20 8"/>
+            <!-- Scan Activity -->
+            <div class="analytics-card full-width">
+              <h3>Daily Scan Activity</h3>
+              <div class="activity-chart" id="activityChart">
+                <svg viewBox="0 0 280 120" preserveAspectRatio="xMidYMid meet">
+                  <g id="bars"></g>
+                  <g id="labels"></g>
                 </svg>
-                <p>No applications yet</p>
-                <span>Start tracking your job applications to see them here</span>
               </div>
             </div>
-          </div>
-
-          <!-- Upcoming Reminders -->
-          <div class="section">
-            <div class="section-header">
-              <h3>Upcoming Reminders</h3>
-              <a href="#" class="view-all" data-tab="reminders">View All →</a>
-            </div>
-            <div class="reminders-list" id="upcomingReminders">
-              <div class="empty-state">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                </svg>
-                <p>No upcoming reminders</p>
-                <span>Add follow-up reminders to stay on top of your applications</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Applications Tab -->
-        <section id="applications-tab" class="tab-pane">
-          <div class="filters-bar">
-            <div class="search-box">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="11" cy="11" r="8"/>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-              </svg>
-              <input type="text" id="searchApps" placeholder="Search applications...">
-            </div>
-            <div class="filter-group">
-              <select id="statusFilter">
-                <option value="all">All Status</option>
-                <option value="applied">Applied</option>
-                <option value="interviewing">Interviewing</option>
-                <option value="offered">Offered</option>
-                <option value="rejected">Rejected</option>
-                <option value="saved">Saved</option>
-              </select>
-              <select id="sortFilter">
-                <option value="newest">Newest First</option>
-                <option value="oldest">Oldest First</option>
-                <option value="company">By Company</option>
-                <option value="status">By Status</option>
-              </select>
-            </div>
-          </div>
-          
-          <div class="applications-grid" id="applicationsGrid">
-            <!-- Applications will be populated here -->
           </div>
         </section>
 
@@ -409,82 +275,67 @@
           </div>
         </section>
 
-        <!-- Reminders Tab -->
-        <section id="reminders-tab" class="tab-pane">
-          <div class="reminders-header">
-            <button class="btn btn-primary" id="addReminderBtn">
+
+        <!-- Analytics Tab -->
+
+        <!-- Scan History Tab -->
+        <section id="scan-history-tab" class="tab-pane">
+          <div class="section-header" style="margin-bottom: 20px;">
+            <h2>Analyzed Job Postings</h2>
+            <p style="margin-top: 5px; color: var(--text-secondary);">Review all jobs you've scanned and their risk assessments</p>
+          </div>
+          
+          <div class="filters-bar">
+            <div class="search-box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input type="text" id="searchScans" placeholder="Search scans...">
+            </div>
+            <div class="filter-group">
+              <select id="riskFilter">
+                <option value="all">All Risk Levels</option>
+                <option value="safe">Safe (0-30)</option>
+                <option value="caution">Caution (31-60)</option>
+                <option value="danger">High Risk (61+)</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="scan-history-list" id="scanHistoryList">
+            <div class="empty-state">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+              <p>No scan history yet</p>
+              <span>Visit job postings to start scanning</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Whitelist Tab -->
+        <section id="whitelist-tab" class="tab-pane">
+          <div class="whitelist-header">
+            <p>Companies you've marked as trusted won't trigger warnings.</p>
+            <button class="btn btn-primary" id="addToWhitelistBtn">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19"/>
                 <line x1="5" y1="12" x2="19" y2="12"/>
               </svg>
-              Add Reminder
+              Add Company
             </button>
           </div>
-          <div class="reminders-grid" id="remindersGrid">
-            <!-- Reminders will be populated here -->
-          </div>
-        </section>
-
-        <!-- Analytics Tab -->
-        <section id="analytics-tab" class="tab-pane">
-          <div class="analytics-grid">
-            <div class="analytics-card full-width">
-              <h3>Application Trends</h3>
-              <div class="line-chart-container" id="trendsChart">
-                <!-- Line chart will be rendered here -->
-              </div>
-            </div>
-            <div class="analytics-card">
-              <h3>Response Rate</h3>
-              <div class="metric-display">
-                <span class="metric-value" id="responseRate">0%</span>
-                <span class="metric-change positive">+5%</span>
-              </div>
-              <p class="metric-description">Based on last 30 days</p>
-            </div>
-            <div class="analytics-card">
-              <h3>Average Time to Response</h3>
-              <div class="metric-display">
-                <span class="metric-value" id="avgResponseTime">- days</span>
-              </div>
-              <p class="metric-description">For applications with responses</p>
-            </div>
-            <div class="analytics-card">
-              <h3>Top Job Sources</h3>
-              <div class="source-list" id="topSources">
-                <div class="source-item">
-                  <span>LinkedIn</span>
-                  <div class="source-bar" style="width: 70%"></div>
-                  <span>70%</span>
-                </div>
-                <div class="source-item">
-                  <span>Indeed</span>
-                  <div class="source-bar" style="width: 20%"></div>
-                  <span>20%</span>
-                </div>
-                <div class="source-item">
-                  <span>Other</span>
-                  <div class="source-bar" style="width: 10%"></div>
-                  <span>10%</span>
-                </div>
-              </div>
-            </div>
-            <div class="analytics-card">
-              <h3>Scam Detection Stats</h3>
-              <div class="scam-stats">
-                <div class="scam-stat">
-                  <span class="scam-value" id="jobsAnalyzed">0</span>
-                  <span class="scam-label">Jobs Analyzed</span>
-                </div>
-                <div class="scam-stat">
-                  <span class="scam-value danger" id="scamsFound">0</span>
-                  <span class="scam-label">Scams Found</span>
-                </div>
-                <div class="scam-stat">
-                  <span class="scam-value safe" id="safeJobs">0</span>
-                  <span class="scam-label">Safe Jobs</span>
-                </div>
-              </div>
+          
+          <div class="whitelist-grid" id="whitelistGrid">
+            <div class="empty-state">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+              <p>No whitelisted companies</p>
+              <span>Add trusted companies to skip safety checks</span>
             </div>
           </div>
         </section>
@@ -496,6 +347,22 @@
             <div class="settings-section">
               <h3>Account</h3>
               <div class="settings-card">
+                <!-- Sign In Row (shown when not signed in) -->
+                <div class="setting-row" id="signInRow" style="display: none;">
+                  <div class="setting-info">
+                    <span class="setting-label">Sign In</span>
+                    <span class="setting-description">Sign in with Google to use AI features</span>
+                  </div>
+                  <button class="btn btn-primary" id="signInBtn">
+                    <svg viewBox="0 0 24 24" width="16" height="16" style="margin-right: 8px;">
+                      <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                      <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                      <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                      <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg>
+                    Sign in with Google
+                  </button>
+                </div>
                 <div class="setting-row">
                   <div class="setting-info">
                     <span class="setting-label">Email</span>
@@ -509,6 +376,20 @@
                     <span class="setting-value" id="settingsSubscription">Free Plan</span>
                   </div>
                   <button class="btn btn-primary" id="upgradePlan">Upgrade to Pro</button>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-info">
+                    <span class="setting-label">Authentication</span>
+                    <span class="setting-description">Fix issues with AI features or sync</span>
+                  </div>
+                  <button class="btn btn-secondary" id="fixAuthBtn">🔧 Fix Auth</button>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-info">
+                    <span class="setting-label">Sign Out</span>
+                    <span class="setting-description">Sign out of your account</span>
+                  </div>
+                  <button class="btn btn-danger" id="logoutBtn">Logout</button>
                 </div>
               </div>
             </div>
@@ -535,16 +416,6 @@
             <div class="settings-section">
               <h3>Notifications</h3>
               <div class="settings-card">
-                <div class="setting-row">
-                  <div class="setting-info">
-                    <span class="setting-label">Follow-up Reminders</span>
-                    <span class="setting-description">Get notified when it's time to follow up</span>
-                  </div>
-                  <label class="toggle">
-                    <input type="checkbox" id="followUpReminders" checked>
-                    <span class="slider"></span>
-                  </label>
-                </div>
                 <div class="setting-row">
                   <div class="setting-info">
                     <span class="setting-label">Scam Alerts</span>
@@ -602,113 +473,6 @@
         </section>
       </div>
     </main>
-  </div>
-
-  <!-- Add Application Modal -->
-  <div class="modal" id="addApplicationModal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>Add Application</h2>
-        <button class="modal-close" id="closeModal">&times;</button>
-      </div>
-      <form id="applicationForm">
-        <div class="form-group">
-          <label for="jobTitle">Job Title *</label>
-          <input type="text" id="jobTitle" required placeholder="e.g. Software Engineer">
-        </div>
-        <div class="form-group">
-          <label for="company">Company *</label>
-          <input type="text" id="company" required placeholder="e.g. Google">
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="location">Location</label>
-            <input type="text" id="location" placeholder="e.g. San Francisco, CA">
-          </div>
-          <div class="form-group">
-            <label for="salary">Salary Range</label>
-            <input type="text" id="salary" placeholder="e.g. $120k - $150k">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="status">Status</label>
-            <select id="status">
-              <option value="saved">Saved</option>
-              <option value="applied" selected>Applied</option>
-              <option value="interviewing">Interviewing</option>
-              <option value="offered">Offered</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="appliedDate">Date Applied</label>
-            <input type="date" id="appliedDate">
-          </div>
-        </div>
-        <div class="form-group">
-          <label for="jobUrl">Job URL</label>
-          <input type="url" id="jobUrl" placeholder="https://...">
-        </div>
-        <div class="form-group">
-          <label for="notes">Notes</label>
-          <textarea id="notes" rows="3" placeholder="Any additional notes..."></textarea>
-        </div>
-        <div class="form-actions">
-          <button type="button" class="btn btn-secondary" id="cancelApplication">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save Application</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- Add Reminder Modal -->
-  <div class="modal" id="addReminderModal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>Add Reminder</h2>
-        <button class="modal-close" id="closeReminderModal">&times;</button>
-      </div>
-      <form id="reminderForm">
-        <div class="form-group">
-          <label for="reminderTitle">Reminder Title *</label>
-          <input type="text" id="reminderTitle" required placeholder="e.g. Follow up with Google">
-        </div>
-        <div class="form-group">
-          <label for="reminderApp">Related Application</label>
-          <select id="reminderApp">
-            <option value="">None</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="reminderDate">Date *</label>
-            <input type="date" id="reminderDate" required>
-          </div>
-          <div class="form-group">
-            <label for="reminderTime">Time</label>
-            <input type="time" id="reminderTime" value="09:00">
-          </div>
-        </div>
-        <div class="form-group">
-          <label for="reminderType">Reminder Type</label>
-          <select id="reminderType">
-            <option value="follow-up">Follow Up</option>
-            <option value="interview">Interview</option>
-            <option value="deadline">Deadline</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="reminderNotes">Notes</label>
-          <textarea id="reminderNotes" rows="2" placeholder="Optional notes..."></textarea>
-        </div>
-        <div class="form-actions">
-          <button type="button" class="btn btn-secondary" id="cancelReminder">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save Reminder</button>
-        </div>
-      </form>
-    </div>
   </div>
 
   <!-- Cover Letter Modal -->
@@ -773,6 +537,18 @@
   <div class="toast" id="toast">
     <span class="toast-message"></span>
   </div>
+
+  <!-- Debug Console (hidden by default) -->
+  <div id="debugConsole" style="display: none; position: fixed; bottom: 50px; right: 10px; background: #222; color: #0f0; padding: 15px; border-radius: 4px; font-family: monospace; font-size: 11px; width: 450px; max-height: 350px; overflow-y: auto; z-index: 10000; border: 2px solid #0f0; box-shadow: 0 0 10px rgba(0,255,0,0.3);">
+    <div style="margin-bottom: 10px; font-weight: bold; color: #0f0; border-bottom: 1px solid #0f0; padding-bottom: 5px;">🐛 DEBUG CONSOLE</div>
+    <button id="checkStorageBtn" style="background: #0f0; color: #222; padding: 6px 10px; border: none; border-radius: 3px; cursor: pointer; font-family: monospace; font-weight: bold; margin-right: 5px; margin-bottom: 8px;">Check Storage</button>
+    <button id="testScanBtn" style="background: #0f0; color: #222; padding: 6px 10px; border: none; border-radius: 3px; cursor: pointer; font-family: monospace; font-weight: bold; margin-bottom: 8px;">Test Scan</button>
+    <button id="clearDebugBtn" style="background: #666; color: #0f0; padding: 6px 10px; border: 1px solid #0f0; border-radius: 3px; cursor: pointer; font-family: monospace; font-size: 10px; margin-bottom: 8px;">Clear</button>
+    <div id="debugOutput" style="margin-top: 8px; max-height: 250px; overflow-y: auto; border-top: 1px solid #0f0; padding-top: 8px;"></div>
+  </div>
+  
+  <!-- Toggle Debug Button (always visible) -->
+  <button id="debugToggle" style="position: fixed; bottom: 10px; right: 10px; background: #0f0; color: #222; padding: 10px 14px; border: none; border-radius: 4px; cursor: pointer; font-family: monospace; font-size: 12px; z-index: 9999; font-weight: bold; box-shadow: 0 0 8px rgba(0,255,0,0.5);">🐛 DEBUG</button>
 
   <script src="dashboard.js"></script>
 </body>

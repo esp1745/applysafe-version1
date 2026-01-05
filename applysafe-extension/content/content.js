@@ -15,7 +15,8 @@
   // Site-specific selectors for extracting job data
   const SITE_SELECTORS = {
     'linkedin.com': {
-      title: '.job-details-jobs-unified-top-card__job-title, .jobs-unified-top-card__job-title, .t-24.t-bold, h1.t-24, .jobs-details h1, .job-details h1, h1[class*="job"]',
+      // Job title - be very specific to avoid picking up user headlines
+      title: '.job-details-jobs-unified-top-card__job-title h1, .job-details-jobs-unified-top-card__job-title a, .job-details-jobs-unified-top-card__job-title, .jobs-unified-top-card__job-title h1, .jobs-unified-top-card__job-title a, .jobs-unified-top-card__job-title, .jobs-details-top-card__job-title, .topcard__title, h1.jobs-details__main-title',
       company: '.job-details-jobs-unified-top-card__company-name a, .job-details-jobs-unified-top-card__company-name, .jobs-unified-top-card__company-name a, .jobs-unified-top-card__company-name, .jobs-unified-top-card__subtitle-primary-grouping a, .job-details-jobs-unified-top-card__primary-description-without-tagline a, a.app-aware-link[href*="/company/"], .artdeco-entity-lockup__subtitle a, .jobs-company__name a, .jobs-company__name, [data-test-id="job-details-jobs-unified-top-card__company-name"], span[class*="company-name"]',
       description: '.jobs-description__content, .jobs-box__html-content, .jobs-description-content__text, #job-details, .jobs-details__main-content',
       salary: '.job-details-jobs-unified-top-card__job-insight, .jobs-unified-top-card__job-insight, .salary-main-rail__salary-range',
@@ -183,19 +184,28 @@
     
     // LinkedIn-specific checks
     if (hostname.includes('linkedin.com')) {
-      // Valid job URLs contain /jobs/ or /job-view/
-      if (url.includes('/jobs/view/') || url.includes('/jobs/collections/')) {
-        return true;
+      // Valid job URLs contain /jobs/ or /job-view/ (also allow LinkedIn jobs URLs with parameters)
+      if (url.includes('/jobs/view/') || url.includes('/jobs/collections/') || 
+          url.includes('/job-view/') || url.includes('/jobs/') && !url.includes('/jobs/search')) {
+        // Additional validation: make sure it's not just the jobs home page
+        // Check if there's actual job content on the page
+        const hasJobTitle = document.querySelector(
+          'h1, .job-details-jobs-unified-top-card__job-title, ' +
+          '.jobs-unified-top-card__job-title, .topcard__title'
+        );
+        if (hasJobTitle && hasJobTitle.textContent.trim().length > 0) {
+          return true;
+        }
+        // If no job title found but we're in /jobs/, still might be a job page (loading)
+        if (url.includes('/jobs/view/') || url.includes('/job-view/')) {
+          return true;
+        }
       }
       // Exclude profile pages, feed, messaging, etc.
       if (url.includes('/in/') || url.includes('/feed') || url.includes('/messaging') || 
           url.includes('/mynetwork') || url.includes('/notifications')) {
         console.log('ApplySafe: Skipping - this is a LinkedIn profile/feed page, not a job posting');
         return false;
-      }
-      // Generic /jobs/ might be job search results
-      if (url.includes('/jobs/')) {
-        return true;
       }
       return false;
     }
@@ -316,6 +326,15 @@
       url: window.location.href,
       timestamp: Date.now()
     };
+    
+    // Debug logging
+    console.log('ApplySafe: Extracted job data:', {
+      title: data.title ? `${data.title.substring(0, 50)}...` : 'NOT FOUND',
+      company: data.company ? `${data.company.substring(0, 30)}...` : 'NOT FOUND',
+      descriptionLength: data.description ? data.description.length : 0,
+      salary: data.salary ? 'FOUND' : 'NOT FOUND',
+      location: data.location ? `${data.location.substring(0, 30)}...` : 'NOT FOUND'
+    });
     
     // Extract additional metadata
     data.contactEmail = extractEmails(data.description);
@@ -499,6 +518,20 @@
             continue;
           }
           
+          // Skip LinkedIn profile headlines (typically contain multiple | separators)
+          // e.g., "Data scientist | software engineer | passionate about..."
+          const pipeCount = (cleanText.match(/\|/g) || []).length;
+          if (pipeCount >= 2) {
+            console.log('ApplySafe: Skipping potential LinkedIn headline:', cleanText.substring(0, 50));
+            continue;
+          }
+          
+          // Skip if it looks like a profile tagline (contains "passionate about", "looking for", etc.)
+          if (/passionate about|looking for|seeking|open to|helping|building|connecting/i.test(cleanText)) {
+            console.log('ApplySafe: Skipping potential profile description:', cleanText.substring(0, 50));
+            continue;
+          }
+          
           // Clean up job title text
           cleanText = cleanText
             .replace(/\s*-\s*job post$/i, '')  // Remove "- job post"
@@ -594,21 +627,37 @@
       case 'reprocessPage':
         // Re-extract job data (for popup opening)
         console.log('ApplySafe: Reprocess page requested');
+        // ALWAYS clear old data first to ensure fresh extraction
+        currentJobData = null;
         // Only extract if this is actually a job posting page
         if (isJobPostingPage()) {
           currentJobData = extractJobData();
+          console.log('ApplySafe: Fresh job data extracted:', {
+            title: currentJobData?.title,
+            company: currentJobData?.company,
+            url: currentJobData?.url
+          });
         } else {
-          currentJobData = null;
           console.log('ApplySafe: Not a job posting page, setting job data to null');
         }
-        sendResponse({ success: true });
+        sendResponse({ success: true, jobData: currentJobData });
         break;
         
       case 'getJobData':
-        // If we don't have job data yet, try to extract it now
-        if (!currentJobData) {
-          console.log('ApplySafe: No cached job data, extracting now...');
-          // Only extract if this is actually a job posting page
+        // ALWAYS re-extract to ensure we have the latest job data
+        // This handles SPAs where the job changes without full page reload
+        console.log('ApplySafe: Getting job data, current URL:', window.location.href);
+        
+        // Check if URL has changed - if so, definitely need fresh data
+        const currentUrl = window.location.href;
+        if (currentJobData && currentJobData.url !== currentUrl) {
+          console.log('ApplySafe: URL changed, clearing old job data');
+          currentJobData = null;
+        }
+        
+        // Extract fresh data if needed or if explicitly requested
+        if (!currentJobData || request.forceRefresh) {
+          console.log('ApplySafe: Extracting fresh job data...');
           if (isJobPostingPage()) {
             currentJobData = extractJobData();
           } else {
@@ -616,8 +665,13 @@
             console.log('ApplySafe: Not a job posting page');
           }
         }
+        
         sendResponse({ jobData: currentJobData });
-        console.log('ApplySafe: Sent job data:', currentJobData ? 'available' : 'null');
+        console.log('ApplySafe: Sent job data:', currentJobData ? {
+          title: currentJobData.title,
+          company: currentJobData.company,
+          url: currentJobData.url
+        } : 'null');
         break;
         
       case 'showWarning':
@@ -658,7 +712,7 @@
   // Auto-analyze job posting
   async function autoAnalyze() {
     try {
-      const settings = await chrome.storage.local.get(['settings']);
+      const settings = await chrome.storage.local.get(['settings', 'user', 'guestScans']);
       
       // Check if auto-analyze is enabled (default to true)
       if (settings.settings?.autoAnalyze === false) {
@@ -678,7 +732,44 @@
         return;
       }
       
+      // Check if user is signed in
+      const isSignedIn = !!settings.user?.email;
+      
+      // If not signed in, check guest scan limit (3 free scans)
+      if (!isSignedIn) {
+        const guestScans = settings.guestScans || { count: 0, lastReset: Date.now() };
+        const GUEST_SCAN_LIMIT = 3;
+        
+        // Reset daily
+        const today = new Date().setHours(0, 0, 0, 0);
+        const lastReset = new Date(guestScans.lastReset).setHours(0, 0, 0, 0);
+        if (today > lastReset) {
+          guestScans.count = 0;
+          guestScans.lastReset = Date.now();
+        }
+        
+        if (guestScans.count >= GUEST_SCAN_LIMIT) {
+          console.log('ApplySafe: Guest scan limit reached');
+          showFloatingWidget({ 
+            guestLimitReached: true, 
+            jobTitle: currentJobData.title, 
+            company: currentJobData.company,
+            scansUsed: guestScans.count,
+            scanLimit: GUEST_SCAN_LIMIT
+          });
+          return;
+        }
+        
+        // Increment guest scan count
+        guestScans.count++;
+        await chrome.storage.local.set({ guestScans });
+        console.log('ApplySafe: Guest scan', guestScans.count, '/', GUEST_SCAN_LIMIT);
+      }
+      
       console.log('ApplySafe: Starting auto-analysis...');
+      
+      // Show loading state immediately
+      showFloatingWidget({ loading: true, jobTitle: currentJobData.title, company: currentJobData.company });
       
       // Request analysis with timeout
       const analysisPromise = chrome.runtime.sendMessage({
@@ -698,115 +789,1080 @@
       console.log('ApplySafe: Auto-analysis response:', response);
       
       if (response && response.success && response.result) {
-        if (response.result.riskScore > 30) {
-          showWarningBadge(response.result);
-        }
+        // Always show the floating widget with results
+        showFloatingWidget(response.result);
+      } else if (response && response.analysis) {
+        showFloatingWidget(response.analysis);
+      } else {
+        // Show error state
+        showFloatingWidget({ error: true, jobTitle: currentJobData.title, company: currentJobData.company });
       }
     } catch (error) {
       console.log('ApplySafe: Auto-analysis error:', error.message);
+      showFloatingWidget({ error: true, message: error.message });
     }
   }
 
-  // Show warning badge on the page
-  function showWarningBadge(analysis) {
-    // Remove existing badge
-    hideWarningBadge();
+  // Show floating widget (always visible)
+  async function showFloatingWidget(data) {
+    // Remove existing widget
+    const existing = document.getElementById('applysafe-floating-widget');
+    if (existing) existing.remove();
+
+    // Get user data and stats from background
+    let userData = null;
+    let stats = { threatsBlocked: 0, jobsScanned: 0, safetyRate: '100%' };
+    let recentScans = [];
+    let subscriptionData = { status: 'trial', planName: 'Free Trial' };
+    let h1bData = data.h1bData || null;
     
-    // Create badge container
-    warningBadge = document.createElement('div');
-    warningBadge.id = 'applysafe-warning-badge';
-    warningBadge.className = `applysafe-badge applysafe-${getRiskLevel(analysis.riskScore)}`;
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'getWidgetData' });
+      console.log('ApplySafe: getWidgetData response:', response);
+      if (response && response.success) {
+        userData = response.user;
+        stats = response.stats || stats;
+        recentScans = response.recentScans || [];
+        subscriptionData = response.subscription || subscriptionData;
+        console.log('ApplySafe: User loaded:', userData?.email, userData?.name, 'Subscription:', subscriptionData.status);
+      }
+      
+      // Fetch H-1B data if not already present and we have a company name
+      if (!h1bData && data.company) {
+        try {
+          console.log('ApplySafe: Fetching H-1B data for:', data.company);
+          const h1bResponse = await chrome.runtime.sendMessage({ 
+            action: 'checkH1BSponsorship', 
+            companyName: data.company 
+          });
+          console.log('ApplySafe: H-1B response:', h1bResponse);
+          if (h1bResponse && h1bResponse.success && h1bResponse.h1bData) {
+            h1bData = h1bResponse.h1bData;
+            console.log('ApplySafe: H-1B data loaded:', h1bData);
+          }
+        } catch (e) {
+          console.log('ApplySafe: H-1B check failed', e);
+        }
+      }
+    } catch (e) {
+      console.log('ApplySafe: Could not get widget data', e);
+    }
+
+    const widget = document.createElement('div');
+    widget.id = 'applysafe-floating-widget';
     
-    // Badge HTML
-    warningBadge.innerHTML = `
-      <div class="applysafe-badge-header">
-        <div class="applysafe-badge-icon">
-          ${getShieldIcon(analysis.riskScore)}
+    // Determine risk level and colors
+    let riskClass = 'safe';
+    let riskLabel = 'Looks Safe';
+    let riskColor = '#10b981';
+    let riskBg = '#ecfdf5';
+    
+    if (data.guestLimitReached) {
+      riskClass = 'limit';
+      riskLabel = 'Sign In Required';
+      riskColor = '#8b5cf6';
+      riskBg = '#f5f3ff';
+    } else if (data.loading) {
+      riskClass = 'loading';
+      riskLabel = 'Analyzing...';
+      riskColor = '#6b7280';
+      riskBg = '#f3f4f6';
+    } else if (data.error) {
+      riskClass = 'error';
+      riskLabel = 'Error';
+      riskColor = '#ef4444';
+      riskBg = '#fef2f2';
+    } else if (data.riskScore !== undefined) {
+      if (data.riskScore > 60) {
+        riskClass = 'danger';
+        riskLabel = 'High Risk';
+        riskColor = '#ef4444';
+        riskBg = '#fef2f2';
+      } else if (data.riskScore > 30) {
+        riskClass = 'warning';
+        riskLabel = 'Caution';
+        riskColor = '#f59e0b';
+        riskBg = '#fffbeb';
+      }
+    }
+
+    const score = data.riskScore ?? '—';
+    // Check all possible H-1B sponsor property names
+    const h1bSponsored = h1bData?.sponsors || h1bData?.sponsored || h1bData?.isH1BSponsor || h1bData?.isH1bSponsor;
+    const h1bStatus = h1bSponsored ? '✅ H-1B' : '';
+    console.log('ApplySafe Widget: H-1B data:', h1bData, 'Sponsored:', h1bSponsored);
+    console.log('ApplySafe Widget: User data:', userData);
+    const userName = userData?.name || 'Guest User';
+    const userEmail = userData?.email || 'Sign in to sync';
+    const userAvatar = userData?.picture || '';
+    const isSignedIn = !!userData?.email;
+
+    widget.innerHTML = `
+      <style>
+        #applysafe-floating-widget {
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          z-index: 2147483647;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          animation: applysafe-slide-in 0.3s ease-out;
+        }
+        #applysafe-floating-widget * {
+          box-sizing: border-box;
+        }
+        @keyframes applysafe-slide-in {
+          from { opacity: 0; transform: translateY(-20px) scale(0.95); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes applysafe-spin {
+          to { transform: rotate(360deg); }
+        }
+        
+        /* Collapsed Pill */
+        .asw-collapsed {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 16px;
+          background: white;
+          border-radius: 50px;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        .asw-collapsed:hover {
+          transform: scale(1.02);
+          box-shadow: 0 6px 25px rgba(0,0,0,0.2);
+        }
+        .asw-pill-score {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 700;
+          font-size: 14px;
+          color: white;
+          background: ${riskColor};
+        }
+        .asw-pill-score.loading::after {
+          content: '';
+          width: 18px;
+          height: 18px;
+          border: 2px solid rgba(255,255,255,0.3);
+          border-top-color: white;
+          border-radius: 50%;
+          animation: applysafe-spin 0.8s linear infinite;
+        }
+        .asw-pill-info {
+          flex: 1;
+        }
+        .asw-pill-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: #1a1a2e;
+        }
+        .asw-pill-status {
+          font-size: 11px;
+          color: ${riskColor};
+          font-weight: 500;
+        }
+        .asw-pill-close {
+          width: 24px;
+          height: 24px;
+          border: none;
+          background: #f3f4f6;
+          border-radius: 50%;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .asw-pill-close:hover { background: #e5e7eb; }
+        .asw-pill-close svg { width: 14px; height: 14px; stroke: #6b7280; }
+        
+        /* Expanded Full Panel */
+        .asw-expanded {
+          display: none;
+          width: 380px;
+          max-height: 85vh;
+          background: white;
+          border-radius: 16px;
+          box-shadow: 0 10px 50px rgba(0,0,0,0.25);
+          overflow: hidden;
+          flex-direction: column;
+        }
+        #applysafe-floating-widget.expanded .asw-collapsed { display: none; }
+        #applysafe-floating-widget.expanded .asw-expanded { display: flex; }
+        
+        /* Header */
+        .asw-header {
+          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          padding: 14px 16px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          color: white;
+        }
+        .asw-header-left {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .asw-logo {
+          width: 28px;
+          height: 28px;
+        }
+        .asw-brand h1 {
+          margin: 0;
+          font-size: 16px;
+          font-weight: 700;
+        }
+        .asw-brand span {
+          font-size: 10px;
+          opacity: 0.9;
+        }
+        .asw-header-btns {
+          display: flex;
+          gap: 8px;
+        }
+        .asw-header-btn {
+          width: 28px;
+          height: 28px;
+          border: none;
+          background: rgba(255,255,255,0.2);
+          border-radius: 6px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .asw-header-btn:hover { background: rgba(255,255,255,0.3); }
+        .asw-header-btn svg { width: 16px; height: 16px; stroke: white; }
+        
+        /* User Section */
+        .asw-user {
+          padding: 12px 16px;
+          background: #f8fafc;
+          border-bottom: 1px solid #e5e7eb;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .asw-avatar {
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          background: #e5e7eb;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+          overflow: hidden;
+        }
+        .asw-avatar img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+        .asw-user-info {
+          flex: 1;
+          min-width: 0;
+        }
+        .asw-user-name {
+          font-size: 13px;
+          font-weight: 600;
+          color: #1a1a2e;
+        }
+        .asw-user-email {
+          font-size: 11px;
+          color: #6b7280;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .asw-signin-btn {
+          padding: 6px 12px;
+          background: #10b981;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          font-size: 11px;
+          font-weight: 500;
+          cursor: pointer;
+        }
+        .asw-signin-btn:hover { background: #059669; }
+        .asw-logout-btn {
+          padding: 6px 12px;
+          background: #f3f4f6;
+          color: #4b5563;
+          border: 1px solid #e5e7eb;
+          border-radius: 6px;
+          font-size: 11px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .asw-logout-btn:hover {
+          background: #fee2e2;
+          color: #dc2626;
+          border-color: #fca5a5;
+        }
+        
+        /* Trial Banner */
+        .asw-trial {
+          padding: 10px 16px;
+          background: #fef3c7;
+          border-bottom: 1px solid #fcd34d;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .asw-trial-icon { font-size: 16px; }
+        .asw-trial-info {
+          flex: 1;
+        }
+        .asw-trial-title {
+          font-size: 12px;
+          font-weight: 600;
+          color: #92400e;
+        }
+        .asw-trial-text {
+          font-size: 10px;
+          color: #a16207;
+        }
+        .asw-upgrade-btn {
+          padding: 5px 10px;
+          background: #f59e0b;
+          color: white;
+          border: none;
+          border-radius: 5px;
+          font-size: 10px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .asw-upgrade-btn:hover { background: #d97706; }
+        
+        /* Stats Bar */
+        .asw-stats {
+          display: flex;
+          padding: 12px 16px;
+          background: white;
+          border-bottom: 1px solid #e5e7eb;
+        }
+        .asw-stat {
+          flex: 1;
+          text-align: center;
+        }
+        .asw-stat-num {
+          font-size: 18px;
+          font-weight: 700;
+          color: #10b981;
+        }
+        .asw-stat-label {
+          font-size: 9px;
+          color: #6b7280;
+          text-transform: uppercase;
+        }
+        .asw-stat-divider {
+          width: 1px;
+          background: #e5e7eb;
+        }
+        
+        /* Main Content - Scrollable */
+        .asw-content {
+          flex: 1;
+          overflow-y: auto;
+          max-height: 400px;
+        }
+        
+        /* Risk Card */
+        .asw-risk {
+          padding: 16px;
+          background: ${riskBg};
+          border-bottom: 1px solid rgba(0,0,0,0.05);
+        }
+        .asw-risk-top {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          margin-bottom: 12px;
+        }
+        .asw-risk-circle {
+          width: 64px;
+          height: 64px;
+          border-radius: 50%;
+          background: ${riskColor};
+          color: white;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+        }
+        .asw-risk-score {
+          font-size: 22px;
+          font-weight: 700;
+          line-height: 1;
+        }
+        .asw-risk-label {
+          font-size: 8px;
+          text-transform: uppercase;
+          opacity: 0.9;
+        }
+        .asw-risk-info h3 {
+          margin: 0 0 4px 0;
+          font-size: 14px;
+          font-weight: 600;
+          color: #1a1a2e;
+        }
+        .asw-risk-info p {
+          margin: 0;
+          font-size: 12px;
+          color: ${riskColor};
+          font-weight: 500;
+        }
+        .asw-job-title {
+          font-size: 13px;
+          color: #374151;
+          margin-bottom: 4px;
+        }
+        .asw-company {
+          font-size: 12px;
+          color: #6b7280;
+        }
+        
+        /* Sections */
+        .asw-section {
+          padding: 12px 16px;
+          border-bottom: 1px solid #f3f4f6;
+        }
+        .asw-section-title {
+          font-size: 11px;
+          font-weight: 600;
+          color: #6b7280;
+          text-transform: uppercase;
+          margin-bottom: 8px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .asw-list {
+          margin: 0;
+          padding: 0;
+          list-style: none;
+        }
+        .asw-list li {
+          font-size: 12px;
+          color: #374151;
+          padding: 5px 0;
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+        }
+        .asw-list li::before {
+          content: '•';
+          color: ${riskColor};
+          font-weight: bold;
+        }
+        
+        /* H-1B Section */
+        .asw-h1b {
+          background: #ecfdf5;
+          padding: 12px 16px;
+          border-bottom: 1px solid #d1fae5;
+        }
+        .asw-h1b-badge {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 13px;
+          font-weight: 600;
+          color: #059669;
+          margin-bottom: 10px;
+        }
+        .asw-h1b-stats {
+          display: flex;
+          gap: 16px;
+        }
+        .asw-h1b-stat {
+          text-align: center;
+        }
+        .asw-h1b-stat-val {
+          font-size: 16px;
+          font-weight: 700;
+          color: #047857;
+        }
+        .asw-h1b-stat-label {
+          font-size: 9px;
+          color: #059669;
+        }
+        
+        /* AI Analysis */
+        .asw-ai {
+          padding: 12px 16px;
+          background: #f0f9ff;
+          border-bottom: 1px solid #bae6fd;
+        }
+        .asw-ai-title {
+          font-size: 11px;
+          font-weight: 600;
+          color: #0369a1;
+          margin-bottom: 8px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .asw-ai-text {
+          font-size: 12px;
+          color: #0c4a6e;
+          line-height: 1.5;
+        }
+        
+        /* Actions */
+        .asw-actions {
+          padding: 12px 16px;
+          display: flex;
+          gap: 8px;
+          background: white;
+          border-bottom: 1px solid #e5e7eb;
+        }
+        .asw-action-btn {
+          flex: 1;
+          padding: 8px;
+          border: 1px solid #e5e7eb;
+          background: white;
+          border-radius: 6px;
+          font-size: 11px;
+          font-weight: 500;
+          color: #374151;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+        }
+        .asw-action-btn:hover { background: #f9fafb; }
+        .asw-action-btn.danger { color: #dc2626; border-color: #fecaca; }
+        .asw-action-btn.danger:hover { background: #fef2f2; }
+        
+        /* Recent Scans */
+        .asw-recent {
+          padding: 12px 16px;
+        }
+        .asw-recent-title {
+          font-size: 11px;
+          font-weight: 600;
+          color: #6b7280;
+          text-transform: uppercase;
+          margin-bottom: 8px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .asw-recent-title a {
+          font-size: 10px;
+          color: #10b981;
+          text-decoration: none;
+          text-transform: none;
+        }
+        .asw-scan-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px 0;
+          border-bottom: 1px solid #f3f4f6;
+        }
+        .asw-scan-item:last-child { border-bottom: none; }
+        .asw-scan-score {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 11px;
+          font-weight: 700;
+          color: white;
+        }
+        .asw-scan-score.safe { background: #10b981; }
+        .asw-scan-score.warning { background: #f59e0b; }
+        .asw-scan-score.danger { background: #ef4444; }
+        .asw-scan-info {
+          flex: 1;
+          min-width: 0;
+        }
+        .asw-scan-title {
+          font-size: 11px;
+          font-weight: 500;
+          color: #1a1a2e;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .asw-scan-company {
+          font-size: 10px;
+          color: #6b7280;
+        }
+        .asw-scan-time {
+          font-size: 9px;
+          color: #9ca3af;
+        }
+        
+        /* Footer */
+        .asw-footer {
+          padding: 10px 16px;
+          background: #f9fafb;
+          border-top: 1px solid #e5e7eb;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .asw-footer-text {
+          font-size: 9px;
+          color: #9ca3af;
+        }
+        .asw-footer-links {
+          display: flex;
+          gap: 12px;
+        }
+        .asw-footer-links a {
+          font-size: 10px;
+          color: #6b7280;
+          text-decoration: none;
+        }
+        .asw-footer-links a:hover { color: #10b981; }
+        
+        /* Minimize button in footer */
+        .asw-minimize {
+          padding: 8px 16px;
+          background: #10b981;
+          color: white;
+          border: none;
+          border-radius: 0 0 16px 16px;
+          font-size: 12px;
+          font-weight: 500;
+          cursor: pointer;
+          width: 100%;
+        }
+        .asw-minimize:hover { background: #059669; }
+      </style>
+      
+      <!-- Collapsed Pill -->
+      <div class="asw-collapsed">
+        <div class="asw-pill-score ${data.loading ? 'loading' : ''}">${data.loading ? '' : score}</div>
+        <div class="asw-pill-info">
+          <div class="asw-pill-title">ApplySafe</div>
+          <div class="asw-pill-status">${riskLabel} ${h1bStatus}</div>
         </div>
-        <div class="applysafe-badge-info">
-          <div class="applysafe-badge-title">ApplySafe Analysis</div>
-          <div class="applysafe-badge-score">Risk Score: ${analysis.riskScore}/100</div>
-        </div>
-        <button class="applysafe-badge-toggle" aria-label="Expand details">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-        </button>
-        <button class="applysafe-badge-close" aria-label="Close">
+        <button class="asw-pill-close" title="Close">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
         </button>
       </div>
-      <div class="applysafe-badge-content">
-        <div class="applysafe-badge-verdict">${getVerdictText(analysis.riskScore)}</div>
-        ${analysis.redFlags && analysis.redFlags.length > 0 ? `
-          <div class="applysafe-badge-section">
-            <div class="applysafe-badge-section-title">⚠️ Red Flags</div>
-            <ul class="applysafe-badge-list">
-              ${analysis.redFlags.slice(0, 3).map(f => `<li>${escapeHtml(f)}</li>`).join('')}
+      
+      <!-- Expanded Full Panel -->
+      <div class="asw-expanded">
+        <!-- Header -->
+        <div class="asw-header">
+          <div class="asw-header-left">
+            <svg class="asw-logo" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L3 7V12C3 16.97 7.02 21.5 12 22.5C16.98 21.5 21 16.97 21 12V7L12 2Z" fill="rgba(255,255,255,0.3)"/>
+              <path d="M10 15.5L7.5 13L8.91 11.59L10 12.67L14.59 8.09L16 9.5L10 15.5Z" fill="white"/>
+            </svg>
+            <div class="asw-brand">
+              <h1>ApplySafe</h1>
+              <span>AI-Powered Protection</span>
+            </div>
+          </div>
+          <div class="asw-header-btns">
+            <button class="asw-header-btn" id="asw-dashboard-btn" title="Dashboard">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="7" height="7"/>
+                <rect x="14" y="3" width="7" height="7"/>
+                <rect x="14" y="14" width="7" height="7"/>
+                <rect x="3" y="14" width="7" height="7"/>
+              </svg>
+            </button>
+            <button class="asw-header-btn" id="asw-collapse-btn" title="Minimize">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="18 15 12 9 6 15"></polyline>
+              </svg>
+            </button>
+          </div>
+        </div>
+        
+        <!-- User Section -->
+        <div class="asw-user">
+          <div class="asw-avatar">
+            ${userAvatar ? `<img src="${userAvatar}" alt="">` : '👤'}
+          </div>
+          <div class="asw-user-info">
+            <div class="asw-user-name">${escapeHtml(userName)}</div>
+            <div class="asw-user-email">${escapeHtml(userEmail)}</div>
+          </div>
+          ${!isSignedIn ? '<button class="asw-signin-btn" id="asw-signin-btn">Sign In</button>' : '<button class="asw-logout-btn" id="asw-logout-btn">Logout</button>'}
+        </div>
+        
+        <!-- Trial/Pro Banner -->
+        ${isSignedIn && subscriptionData.status === 'active' ? `
+        <div class="asw-trial" style="background: #ecfdf5; border-color: #10b981;">
+          <span class="asw-trial-icon">✨</span>
+          <div class="asw-trial-info">
+            <div class="asw-trial-title" style="color: #059669;">Pro Plan</div>
+            <div class="asw-trial-text" style="color: #10b981;">Unlimited scans • All features</div>
+          </div>
+        </div>
+        ` : `
+        <div class="asw-trial">
+          <span class="asw-trial-icon">⏰</span>
+          <div class="asw-trial-info">
+            <div class="asw-trial-title">Free Trial</div>
+            <div class="asw-trial-text">${!isSignedIn ? 'Sign in to unlock Pro' : (subscriptionData.status === 'expired' ? 'Trial expired' : '7 days • 10 scans/day')}</div>
+          </div>
+          <button class="asw-upgrade-btn" id="asw-upgrade-btn">${isSignedIn ? 'Upgrade' : 'Sign In'}</button>
+        </div>
+        `}
+        
+        <!-- Stats Bar -->
+        <div class="asw-stats">
+          <div class="asw-stat">
+            <div class="asw-stat-num">${stats.threatsBlocked ?? 0}</div>
+            <div class="asw-stat-label">Threats Blocked</div>
+          </div>
+          <div class="asw-stat-divider"></div>
+          <div class="asw-stat">
+            <div class="asw-stat-num">${stats.jobsScanned ?? 0}</div>
+            <div class="asw-stat-label">Jobs Scanned</div>
+          </div>
+          <div class="asw-stat-divider"></div>
+          <div class="asw-stat">
+            <div class="asw-stat-num">${stats.safetyRate ?? '0%'}</div>
+            <div class="asw-stat-label">Safety Rate</div>
+          </div>
+        </div>
+        
+        <!-- Scrollable Content -->
+        <div class="asw-content">
+          ${data.guestLimitReached ? `
+          <!-- Guest Limit Reached -->
+          <div class="asw-risk" style="background: #f5f3ff;">
+            <div style="text-align: center; padding: 20px;">
+              <div style="font-size: 48px; margin-bottom: 12px;">🔒</div>
+              <h3 style="color: #7c3aed; margin-bottom: 8px;">Free Scans Used Up!</h3>
+              <p style="color: #6b7280; font-size: 13px; margin-bottom: 16px;">
+                You've used ${data.scansUsed || 3} of ${data.scanLimit || 3} free daily scans.<br>
+                Sign in for unlimited scans!
+              </p>
+              <button id="asw-guest-signin-btn" style="
+                padding: 12px 24px;
+                background: #8b5cf6;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+              ">Sign In with Google</button>
+              <p style="color: #9ca3af; font-size: 11px; margin-top: 12px;">
+                ✨ Free 7-day trial • No credit card required
+              </p>
+            </div>
+          </div>
+          ` : `
+          <!-- Risk Assessment -->
+          <div class="asw-risk">
+            <div class="asw-risk-top">
+              <div class="asw-risk-circle">
+                <span class="asw-risk-score">${score}</span>
+                <span class="asw-risk-label">Risk</span>
+              </div>
+              <div class="asw-risk-info">
+                <h3>${riskLabel}</h3>
+                <p class="asw-job-title">${escapeHtml(data.jobTitle || 'Job Analysis')}</p>
+                <p class="asw-company">${escapeHtml(data.company || '')}</p>
+              </div>
+            </div>
+          </div>
+          `}
+          
+          ${!data.guestLimitReached && data.positiveIndicators && data.positiveIndicators.length > 0 ? `
+          <!-- Positive Indicators -->
+          <div class="asw-section">
+            <div class="asw-section-title">✅ Positive Indicators</div>
+            <ul class="asw-list">
+              ${data.positiveIndicators.slice(0, 3).map(f => `<li>${escapeHtml(f)}</li>`).join('')}
             </ul>
           </div>
-        ` : ''}
-        ${analysis.positiveIndicators && analysis.positiveIndicators.length > 0 ? `
-          <div class="applysafe-badge-section">
-            <div class="applysafe-badge-section-title">✓ Positive Signs</div>
-            <ul class="applysafe-badge-list applysafe-positive">
-              ${analysis.positiveIndicators.slice(0, 3).map(p => `<li>${escapeHtml(p)}</li>`).join('')}
+          ` : ''}
+          
+          ${!data.guestLimitReached && data.redFlags && data.redFlags.length > 0 ? `
+          <!-- Red Flags -->
+          <div class="asw-section" style="background: #fef2f2;">
+            <div class="asw-section-title" style="color: #dc2626;">🚩 Red Flags Detected</div>
+            <ul class="asw-list">
+              ${data.redFlags.slice(0, 3).map(f => `<li>${escapeHtml(f)}</li>`).join('')}
             </ul>
           </div>
-        ` : ''}
-        <div class="applysafe-badge-explanation">
-          ${escapeHtml(analysis.explanation || '')}
+          ` : ''}
+          
+          ${!data.guestLimitReached ? `
+          <!-- H-1B Section - Always show for company -->
+          <div class="asw-h1b" style="background: ${h1bSponsored ? '#ecfdf5' : '#fef3c7'}; border-color: ${h1bSponsored ? '#d1fae5' : '#fcd34d'};">
+            <div class="asw-h1b-badge" style="color: ${h1bSponsored ? '#059669' : '#92400e'};">
+              ${h1bSponsored ? '✅ Verified H-1B Sponsor' : '⚠️ H-1B Status Unknown'}
+            </div>
+            ${h1bSponsored ? `
+            <div class="asw-h1b-stats">
+              <div class="asw-h1b-stat">
+                <div class="asw-h1b-stat-val">${(h1bData.totalApplications || h1bData.totalVisas || h1bData.visaCount || h1bData.history?.estimatedTotal || 0).toLocaleString()}+</div>
+                <div class="asw-h1b-stat-label">Total Visas</div>
+              </div>
+              <div class="asw-h1b-stat">
+                <div class="asw-h1b-stat-val">${h1bData.history?.years || h1bData.years || h1bData.yearRange || '2010-2024'}</div>
+                <div class="asw-h1b-stat-label">Active Years</div>
+              </div>
+              ${h1bData.medianSalary ? `
+              <div class="asw-h1b-stat">
+                <div class="asw-h1b-stat-val">$${(h1bData.medianSalary / 1000).toFixed(0)}k</div>
+                <div class="asw-h1b-stat-label">Median Salary</div>
+              </div>
+              ` : ''}
+            </div>
+            <div style="font-size: 11px; color: #059669; margin-top: 8px;">
+              ${escapeHtml(h1bData.note || 'This company has sponsored H-1B visas')}
+            </div>
+            ` : `
+            <div style="font-size: 11px; color: #92400e;">
+              No H-1B sponsorship records found for this company. This doesn't mean they won't sponsor - check with the employer directly.
+            </div>
+            `}
+          </div>
+          ` : ''}
+          
+          ${!data.guestLimitReached && data.explanation ? `
+          <!-- AI Analysis -->
+          <div class="asw-ai">
+            <div class="asw-ai-title">🤖 AI Analysis</div>
+            <div class="asw-ai-text">${escapeHtml(data.explanation.substring(0, 250))}${data.explanation.length > 250 ? '...' : ''}</div>
+          </div>
+          ` : ''}
+          
+          ${!data.guestLimitReached ? `
+          <!-- Actions -->
+          <div class="asw-actions">
+            <button class="asw-action-btn danger" id="asw-report-btn">🚨 Report Scam</button>
+            <button class="asw-action-btn" id="asw-whitelist-btn">✅ Whitelist</button>
+          </div>
+          
+          ${recentScans.length > 0 || isSignedIn ? `
+          <!-- Recent Scans - Only show for signed in users -->
+          <div class="asw-recent">
+            <div class="asw-recent-title">
+              Recent Scans
+              <a href="#" id="asw-view-all">View All</a>
+            </div>
+            ${recentScans.length > 0 ? recentScans.slice(0, 3).map(scan => `
+              <div class="asw-scan-item">
+                <div class="asw-scan-score ${scan.riskScore <= 30 ? 'safe' : scan.riskScore <= 60 ? 'warning' : 'danger'}">${scan.riskScore}</div>
+                <div class="asw-scan-info">
+                  <div class="asw-scan-title">${escapeHtml(scan.title || 'Unknown Job')}</div>
+                  <div class="asw-scan-company">${escapeHtml(scan.company || '')}</div>
+                </div>
+                <div class="asw-scan-time">${scan.time || 'Just now'}</div>
+              </div>
+            `).join('') : `
+              <div class="asw-scan-item">
+                <div class="asw-scan-score safe">${score}</div>
+                <div class="asw-scan-info">
+                  <div class="asw-scan-title">${escapeHtml(data.jobTitle || 'Current Job')}</div>
+                  <div class="asw-scan-company">${escapeHtml(data.company || '')}</div>
+                </div>
+                <div class="asw-scan-time">Just now</div>
+              </div>
+            `}
+          </div>
+          ` : ''}
+          ` : ''}
         </div>
-        <div class="applysafe-badge-actions">
-          <button class="applysafe-btn applysafe-btn-report">Report Scam</button>
-          <button class="applysafe-btn applysafe-btn-details">View Details</button>
+        
+        <!-- Footer -->
+        <div class="asw-footer">
+          <span class="asw-footer-text">Powered by AI • Keeping job seekers safe</span>
+          <div class="asw-footer-links">
+            <a href="#" id="asw-help">Help</a>
+            <a href="#" id="asw-privacy">Privacy</a>
+          </div>
         </div>
+        
+        <!-- Minimize Button -->
+        <button class="asw-minimize" id="asw-minimize-btn">Minimize</button>
       </div>
     `;
-    
-    document.body.appendChild(warningBadge);
-    
-    // Add event listeners
-    const toggleBtn = warningBadge.querySelector('.applysafe-badge-toggle');
-    const closeBtn = warningBadge.querySelector('.applysafe-badge-close');
-    const content = warningBadge.querySelector('.applysafe-badge-content');
-    const reportBtn = warningBadge.querySelector('.applysafe-btn-report');
-    const detailsBtn = warningBadge.querySelector('.applysafe-btn-details');
-    
-    toggleBtn.addEventListener('click', () => {
-      warningBadge.classList.toggle('applysafe-expanded');
+
+    document.body.appendChild(widget);
+
+    // Event listeners
+    const collapsedView = widget.querySelector('.asw-collapsed');
+    const pillClose = widget.querySelector('.asw-pill-close');
+    const collapseBtn = widget.querySelector('#asw-collapse-btn');
+    const minimizeBtn = widget.querySelector('#asw-minimize-btn');
+    const dashboardBtn = widget.querySelector('#asw-dashboard-btn');
+    const signinBtn = widget.querySelector('#asw-signin-btn');
+    const logoutBtn = widget.querySelector('#asw-logout-btn');
+    const upgradeBtn = widget.querySelector('#asw-upgrade-btn');
+    const reportBtn = widget.querySelector('#asw-report-btn');
+    const whitelistBtn = widget.querySelector('#asw-whitelist-btn');
+    const viewAllBtn = widget.querySelector('#asw-view-all');
+
+    // Expand on pill click
+    collapsedView.addEventListener('click', (e) => {
+      if (!e.target.closest('.asw-pill-close')) {
+        widget.classList.add('expanded');
+      }
     });
-    
-    closeBtn.addEventListener('click', () => {
-      hideWarningBadge();
+
+    // Close widget
+    pillClose.addEventListener('click', (e) => {
+      e.stopPropagation();
+      widget.remove();
     });
-    
-    reportBtn.addEventListener('click', () => {
-      chrome.runtime.sendMessage({
-        action: 'reportScam',
-        data: {
-          url: window.location.href,
-          analysis: analysis,
-          timestamp: Date.now()
+
+    // Collapse handlers
+    if (collapseBtn) collapseBtn.addEventListener('click', () => widget.classList.remove('expanded'));
+    if (minimizeBtn) minimizeBtn.addEventListener('click', () => widget.classList.remove('expanded'));
+
+    // Open dashboard
+    if (dashboardBtn) dashboardBtn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'openDashboard' });
+    });
+
+    // Sign in
+    if (signinBtn) signinBtn.addEventListener('click', () => {
+      signinBtn.disabled = true;
+      signinBtn.textContent = 'Signing in...';
+      chrome.runtime.sendMessage({ action: 'signIn' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Sign in error:', chrome.runtime.lastError);
+          signinBtn.disabled = false;
+          signinBtn.textContent = 'Sign In';
+          return;
+        }
+        if (response && response.success) {
+          // Refresh widget after sign-in
+          widget.remove();
+          setTimeout(() => autoAnalyze(), 1000);
+        } else {
+          signinBtn.disabled = false;
+          signinBtn.textContent = 'Sign In';
+          alert(response?.error || 'Sign in failed. Please try again.');
         }
       });
-      reportBtn.textContent = 'Reported!';
-      reportBtn.disabled = true;
     });
     
-    detailsBtn.addEventListener('click', () => {
-      chrome.runtime.sendMessage({ action: 'openPopup' });
+    // Guest sign-in button (when limit reached)
+    const guestSigninBtn = widget.querySelector('#asw-guest-signin-btn');
+    if (guestSigninBtn) guestSigninBtn.addEventListener('click', () => {
+      guestSigninBtn.disabled = true;
+      guestSigninBtn.textContent = 'Signing in...';
+      chrome.runtime.sendMessage({ action: 'signIn' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Sign in error:', chrome.runtime.lastError);
+          guestSigninBtn.disabled = false;
+          guestSigninBtn.textContent = 'Sign In with Google';
+          return;
+        }
+        if (response && response.success) {
+          // Refresh widget after sign-in to re-analyze
+          widget.remove();
+          setTimeout(() => autoAnalyze(), 1000);
+        } else {
+          guestSigninBtn.disabled = false;
+          guestSigninBtn.textContent = 'Sign In with Google';
+          alert(response?.error || 'Sign in failed. Please try again.');
+        }
+      });
     });
-    
-    // Auto-expand for high risk
-    if (analysis.riskScore > 60) {
-      setTimeout(() => {
-        warningBadge.classList.add('applysafe-expanded');
-      }, 500);
-    }
+
+    // Logout
+    if (logoutBtn) logoutBtn.addEventListener('click', () => {
+      if (confirm('Are you sure you want to logout?')) {
+        chrome.runtime.sendMessage({ action: 'logout' }, () => {
+          // Refresh widget to show logged out state
+          widget.remove();
+          showFloatingWidget(data);
+        });
+      }
+    });
+
+    // Upgrade (or Sign In if not signed in)
+    if (upgradeBtn) upgradeBtn.addEventListener('click', async () => {
+      // Check if this is a sign-in button (user not signed in)
+      if (upgradeBtn.textContent === 'Sign In') {
+        upgradeBtn.disabled = true;
+        upgradeBtn.textContent = 'Signing in...';
+        chrome.runtime.sendMessage({ action: 'signIn' }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('Sign in error:', chrome.runtime.lastError);
+            upgradeBtn.disabled = false;
+            upgradeBtn.textContent = 'Sign In';
+            return;
+          }
+          if (response && response.success) {
+            // Refresh widget after sign-in
+            widget.remove();
+            setTimeout(() => autoAnalyze(), 1000);
+          } else {
+            upgradeBtn.disabled = false;
+            upgradeBtn.textContent = 'Sign In';
+            alert(response?.error || 'Sign in failed. Please try again.');
+          }
+        });
+        return;
+      }
+      
+      upgradeBtn.disabled = true;
+      upgradeBtn.textContent = 'Loading...';
+      chrome.runtime.sendMessage({ action: 'startCheckout' }, (response) => {
+        upgradeBtn.disabled = false;
+        upgradeBtn.textContent = 'Upgrade';
+        if (response && (response.url || response.success)) {
+          // If response has url, open it. Otherwise background already opened it
+          if (response.url) {
+            window.open(response.url, '_blank');
+          } else {
+            alert('Opening Stripe checkout in a new tab...');
+          }
+        } else {
+          alert('Failed to start checkout. ' + (response?.error || 'Please try again later.'));
+        }
+      });
+    });
+
+    // Report scam
+    if (reportBtn) reportBtn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'reportScam', data: { url: window.location.href, ...data } });
+      alert('Thank you for reporting! This job has been flagged for review.');
+    });
+
+    // Whitelist
+    if (whitelistBtn) whitelistBtn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'whitelist', data: { company: data.company } });
+      alert('Company added to whitelist!');
+    });
+
+    // View all
+    if (viewAllBtn) viewAllBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      chrome.runtime.sendMessage({ action: 'openDashboard' });
+    });
+  }
+
+  // Show warning badge on the page (legacy function, now calls showFloatingWidget)
+  function showWarningBadge(analysis) {
+    showFloatingWidget(analysis);
   }
 
   // Hide warning badge
@@ -816,9 +1872,9 @@
       warningBadge = null;
     }
     const existing = document.getElementById('applysafe-warning-badge');
-    if (existing) {
-      existing.remove();
-    }
+    if (existing) existing.remove();
+    const floatingWidget = document.getElementById('applysafe-floating-widget');
+    if (floatingWidget) floatingWidget.remove();
   }
 
   // Get risk level string
@@ -861,21 +1917,43 @@
   // Observe page changes for SPAs
   function observePageChanges() {
     let lastUrl = window.location.href;
+    let lastJobTitle = currentJobData?.title || null;
     
     // URL change observer - check more frequently for better responsiveness
     const urlObserver = setInterval(() => {
-      if (window.location.href !== lastUrl) {
+      const newUrl = window.location.href;
+      
+      // Check if URL changed
+      if (newUrl !== lastUrl) {
         console.log('ApplySafe: URL changed, re-processing page');
         console.log('  Old URL:', lastUrl);
-        console.log('  New URL:', window.location.href);
-        lastUrl = window.location.href;
+        console.log('  New URL:', newUrl);
+        lastUrl = newUrl;
         processed = false;
-        currentJobData = null;
+        currentJobData = null;  // CRITICAL: Clear old job data immediately
+        lastJobTitle = null;
         hideWarningBadge();
         // Wait for page to load new content
         setTimeout(processPage, 1500);
       }
-    }, 500);
+      // Also check for LinkedIn job panel changes (URL might stay same but content changes)
+      else if (window.location.hostname.includes('linkedin.com')) {
+        // LinkedIn uses a job details panel that updates without URL change sometimes
+        const currentTitle = document.querySelector('.job-details-jobs-unified-top-card__job-title, .jobs-unified-top-card__job-title')?.textContent?.trim();
+        if (currentTitle && currentTitle !== lastJobTitle && lastJobTitle !== null) {
+          console.log('ApplySafe: LinkedIn job panel changed without URL change');
+          console.log('  Old title:', lastJobTitle);
+          console.log('  New title:', currentTitle);
+          processed = false;
+          currentJobData = null;  // Clear old data
+          lastJobTitle = currentTitle;
+          hideWarningBadge();
+          setTimeout(processPage, 1000);
+        } else if (currentTitle && lastJobTitle === null) {
+          lastJobTitle = currentTitle;
+        }
+      }
+    }, 300);  // Check more frequently (300ms instead of 500ms)
     
     // DOM mutation observer for dynamic content
     let mutationTimeout = null;

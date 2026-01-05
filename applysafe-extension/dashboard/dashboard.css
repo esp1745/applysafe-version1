@@ -1418,3 +1418,215 @@ form {
     grid-template-columns: 1fr;
   }
 }
+/* ============================================
+   Scan History Styles
+   ============================================ */
+
+.scan-history-toolbar {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.scan-search {
+  flex: 1;
+  min-width: 200px;
+  position: relative;
+}
+
+.scan-search svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  stroke: var(--text-muted);
+}
+
+.scan-search input {
+  width: 100%;
+  padding: 10px 12px 10px 40px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.scan-search input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+.scan-filter select {
+  padding: 10px 32px 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%236b7280' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.scan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scan-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  transition: var(--transition-fast);
+}
+
+.scan-item:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-primary);
+}
+
+.scan-info {
+  flex: 1;
+}
+
+.scan-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.scan-company {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.scan-date {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.scan-risk {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  min-width: 80px;
+}
+
+.scan-risk.safe {
+  background: var(--color-safe-light);
+  color: var(--color-safe-dark);
+}
+
+.scan-risk.warning {
+  background: var(--color-warning-light);
+  color: var(--color-warning-dark);
+}
+
+.scan-risk.danger {
+  background: var(--color-danger-light);
+  color: var(--color-danger-dark);
+}
+
+.risk-score {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.risk-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+.scan-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ============================================
+   Whitelist Styles
+   ============================================ */
+
+.whitelist-form {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.whitelist-form input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.whitelist-form input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+.whitelist-form input::placeholder {
+  color: var(--text-muted);
+}
+
+.whitelist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.whitelist-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  transition: var(--transition-fast);
+}
+
+.whitelist-item:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+.whitelist-info {
+  flex: 1;
+}
+
+.whitelist-domain {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.whitelist-date {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 13px;
+}

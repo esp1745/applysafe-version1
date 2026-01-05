@@ -4,12 +4,9 @@
  */
 
 // State
-let applications = [];
-let reminders = [];
 let currentUser = null;
 let settings = {
   theme: 'system',
-  followUpReminders: true,
   scamAlerts: true,
   weeklySummary: false,
   cloudSync: true
@@ -18,6 +15,15 @@ let settings = {
 // DOM Ready
 document.addEventListener('DOMContentLoaded', () => {
   initializeDashboard();
+});
+
+// Listen for messages from popup to refresh data when new scans are added
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'scanAdded' || message.action === 'statsUpdated') {
+    console.log('📨 Received message:', message.action, '- Refreshing dashboard data');
+    loadScanHistory();
+    updateStats();
+  }
 });
 
 // Initialize Dashboard
@@ -36,11 +42,23 @@ async function initializeDashboard() {
   // Load user data
   await loadUserData();
   
-  // Load applications
-  await loadApplications();
+  // Auto-sync from cloud if user is signed in
+  if (currentUser) {
+    console.log('✅ User signed in, auto-syncing from cloud...');
+    try {
+      const syncResult = await chrome.runtime.sendMessage({ action: 'syncFromCloud' });
+      if (syncResult?.success && syncResult?.data) {
+        console.log('📥 Auto-sync successful, loading cloud data');
+        // Update local arrays with cloud data
+        if (syncResult.data.scanHistory) scanHistory = syncResult.data.scanHistory;
+      }
+    } catch (e) {
+      console.log('⚠️ Auto-sync failed:', e);
+    }
+  }
   
-  // Load reminders
-  await loadReminders();
+  // Load scan history
+  await loadScanHistory();
   
   // Setup event listeners
   setupEventListeners();
@@ -108,40 +126,30 @@ function switchTab(tabName) {
   // Update header
   const titles = {
     'overview': { title: 'Overview', description: 'Track your job search progress' },
-    'applications': { title: 'Applications', description: 'Manage your job applications' },
     'ai-tools': { title: 'AI Tools', description: 'Powered by advanced AI' },
-    'reminders': { title: 'Reminders', description: 'Stay on top of your applications' },
     'analytics': { title: 'Analytics', description: 'Insights into your job search' },
-    'settings': { title: 'Settings', description: 'Customize your experience' }
+    'settings': { title: 'Settings', description: 'Customize your experience' },
+    'scan-history': { title: 'Scan History', description: 'All job postings you have analyzed' },
+    'whitelist': { title: 'Whitelist', description: 'Trusted companies that won\'t trigger warnings' }
   };
   
   const info = titles[tabName] || titles['overview'];
   document.getElementById('pageTitle').textContent = info.title;
   document.getElementById('pageDescription').textContent = info.description;
+  
+  // Load scan history when switching to that tab
+  if (tabName === 'scan-history') {
+    loadScanHistory();
+  }
+  
+  // Load whitelist when switching to that tab
+  if (tabName === 'whitelist') {
+    loadWhitelist();
+  }
 }
 
 // Modal Management
 function setupModals() {
-  // Add Application Modal
-  const addAppModal = document.getElementById('addApplicationModal');
-  const addAppBtn = document.getElementById('addApplicationBtn');
-  const closeModalBtn = document.getElementById('closeModal');
-  const cancelAppBtn = document.getElementById('cancelApplication');
-  
-  addAppBtn?.addEventListener('click', () => openModal(addAppModal));
-  closeModalBtn?.addEventListener('click', () => closeModal(addAppModal));
-  cancelAppBtn?.addEventListener('click', () => closeModal(addAppModal));
-  
-  // Add Reminder Modal
-  const addReminderModal = document.getElementById('addReminderModal');
-  const addReminderBtn = document.getElementById('addReminderBtn');
-  const closeReminderBtn = document.getElementById('closeReminderModal');
-  const cancelReminderBtn = document.getElementById('cancelReminder');
-  
-  addReminderBtn?.addEventListener('click', () => openModal(addReminderModal));
-  closeReminderBtn?.addEventListener('click', () => closeModal(addReminderModal));
-  cancelReminderBtn?.addEventListener('click', () => closeModal(addReminderModal));
-  
   // Cover Letter Modal
   const coverLetterModal = document.getElementById('coverLetterModal');
   const generateCLBtn = document.getElementById('generateCoverLetter');
@@ -170,8 +178,24 @@ function closeModal(modal) {
 
 // Load User Data
 async function loadUserData() {
+  // First, sync subscription status from backend
+  try {
+    await chrome.runtime.sendMessage({ action: 'syncSubscription' });
+    console.log('Subscription synced on dashboard load');
+  } catch (e) {
+    console.log('Could not sync subscription:', e);
+  }
+  
   return new Promise((resolve) => {
     chrome.storage.local.get(['authToken', 'user', 'subscription'], (result) => {
+      const signInRow = document.getElementById('signInRow');
+      const logoutBtn = document.getElementById('logoutBtn');
+      const fixAuthBtn = document.getElementById('fixAuthBtn');
+      
+      // Get parent setting-rows for logout and fix auth
+      const logoutRow = logoutBtn?.closest('.setting-row');
+      const fixAuthRow = fixAuthBtn?.closest('.setting-row');
+      
       if (result.user) {
         currentUser = result.user;
         
@@ -189,238 +213,116 @@ async function loadUserData() {
         if (plan === 'Pro Plan') {
           document.getElementById('upgradePlan').textContent = 'Manage Plan';
         }
+        
+        // User is signed in - hide sign-in row, show logout
+        if (signInRow) signInRow.style.display = 'none';
+        if (logoutRow) logoutRow.style.display = 'flex';
+        if (fixAuthRow) fixAuthRow.style.display = 'flex';
+      } else {
+        // No user signed in - show sign-in row, hide logout
+        document.getElementById('userName').textContent = 'Guest';
+        document.getElementById('settingsEmail').textContent = 'Not signed in';
+        document.getElementById('userPlan').textContent = 'Sign in for more';
+        
+        if (signInRow) signInRow.style.display = 'flex';
+        if (logoutRow) logoutRow.style.display = 'none';
+        if (fixAuthRow) fixAuthRow.style.display = 'none';
       }
       resolve();
     });
   });
 }
 
-// Load Applications
-async function loadApplications() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['applications'], (result) => {
-      applications = result.applications || [];
-      renderApplications();
-      updateAppCount();
-      resolve();
-    });
-  });
-}
-
-// Save Applications
-function saveApplications() {
-  chrome.storage.local.set({ applications });
-  updateStats();
-  updateAppCount();
-}
-
-// Render Applications
-function renderApplications() {
-  const grid = document.getElementById('applicationsGrid');
-  const recentList = document.getElementById('recentApplications');
-  
-  if (applications.length === 0) {
-    grid.innerHTML = `
-      <div class="empty-state" style="grid-column: 1 / -1;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-          <polyline points="14 2 14 8 20 8"/>
-        </svg>
-        <p>No applications yet</p>
-        <span>Click "Add Application" to start tracking your job search</span>
-      </div>
-    `;
-    
-    recentList.innerHTML = `
-      <div class="empty-state">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-          <polyline points="14 2 14 8 20 8"/>
-        </svg>
-        <p>No applications yet</p>
-        <span>Start tracking your job applications to see them here</span>
-      </div>
-    `;
-    return;
-  }
-  
-  // Sort by date (newest first)
-  const sorted = [...applications].sort((a, b) => new Date(b.appliedDate || b.createdAt) - new Date(a.appliedDate || a.createdAt));
-  
-  // Render grid
-  grid.innerHTML = sorted.map(app => `
-    <div class="app-card" data-id="${app.id}">
-      <div class="app-card-header">
-        <div>
-          <div class="app-card-title">${escapeHtml(app.title)}</div>
-          <div class="app-card-company">${escapeHtml(app.company)}</div>
-        </div>
-        <span class="status-badge ${app.status}">${capitalizeFirst(app.status)}</span>
-      </div>
-      <div class="app-card-details">
-        ${app.location ? `
-          <div class="app-detail">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-              <circle cx="12" cy="10" r="3"/>
-            </svg>
-            ${escapeHtml(app.location)}
-          </div>
-        ` : ''}
-        ${app.salary ? `
-          <div class="app-detail">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="1" x2="12" y2="23"/>
-              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-            </svg>
-            ${escapeHtml(app.salary)}
-          </div>
-        ` : ''}
-        <div class="app-detail">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-            <line x1="16" y1="2" x2="16" y2="6"/>
-            <line x1="8" y1="2" x2="8" y2="6"/>
-            <line x1="3" y1="10" x2="21" y2="10"/>
-          </svg>
-          ${formatDate(app.appliedDate || app.createdAt)}
-        </div>
-      </div>
-      <div class="app-card-actions">
-        <button class="btn btn-secondary" onclick="editApplication('${app.id}')">Edit</button>
-        <button class="btn btn-secondary" onclick="deleteApplication('${app.id}')">Delete</button>
-      </div>
-    </div>
-  `).join('');
-  
-  // Render recent list (first 5)
-  const recent = sorted.slice(0, 5);
-  recentList.innerHTML = recent.map(app => `
-    <div class="application-item">
-      <div class="app-info">
-        <span class="app-title">${escapeHtml(app.title)}</span>
-        <span class="app-company">${escapeHtml(app.company)}</span>
-      </div>
-      <span class="status-badge ${app.status}">${capitalizeFirst(app.status)}</span>
-    </div>
-  `).join('');
-}
-
-// Update App Count Badge
-function updateAppCount() {
-  document.getElementById('appCount').textContent = applications.length;
-}
-
-// Load Reminders
-async function loadReminders() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['reminders'], (result) => {
-      reminders = result.reminders || [];
-      renderReminders();
-      updateReminderCount();
-      resolve();
-    });
-  });
-}
-
-// Save Reminders
-function saveReminders() {
-  chrome.storage.local.set({ reminders });
-  updateReminderCount();
-}
-
-// Render Reminders
-function renderReminders() {
-  const grid = document.getElementById('remindersGrid');
-  const upcomingList = document.getElementById('upcomingReminders');
-  
-  if (reminders.length === 0) {
-    const emptyHtml = `
-      <div class="empty-state" style="grid-column: 1 / -1;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-        </svg>
-        <p>No reminders yet</p>
-        <span>Add follow-up reminders to stay on top of your applications</span>
-      </div>
-    `;
-    grid.innerHTML = emptyHtml;
-    upcomingList.innerHTML = emptyHtml;
-    return;
-  }
-  
-  // Sort by date
-  const sorted = [...reminders].sort((a, b) => new Date(a.date) - new Date(b.date));
-  
-  // Filter upcoming (not past)
-  const upcoming = sorted.filter(r => new Date(r.date) >= new Date());
-  
-  grid.innerHTML = sorted.map(reminder => `
-    <div class="reminder-item">
-      <div class="app-info">
-        <span class="app-title">${escapeHtml(reminder.title)}</span>
-        <span class="app-company">${formatDate(reminder.date)} ${reminder.time || ''}</span>
-      </div>
-      <button class="btn btn-secondary" onclick="deleteReminder('${reminder.id}')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;">
-          <polyline points="3 6 5 6 21 6"/>
-          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-        </svg>
-      </button>
-    </div>
-  `).join('');
-  
-  upcomingList.innerHTML = upcoming.slice(0, 5).map(reminder => `
-    <div class="reminder-item">
-      <div class="app-info">
-        <span class="app-title">${escapeHtml(reminder.title)}</span>
-        <span class="app-company">${formatDate(reminder.date)}</span>
-      </div>
-      <span class="status-badge ${reminder.type}">${capitalizeFirst(reminder.type)}</span>
-    </div>
-  `).join('') || `
-    <div class="empty-state">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-      </svg>
-      <p>No upcoming reminders</p>
-      <span>Add follow-up reminders to stay on top of your applications</span>
-    </div>
-  `;
-}
-
-// Update Reminder Count
-function updateReminderCount() {
-  const upcoming = reminders.filter(r => new Date(r.date) >= new Date());
-  document.getElementById('reminderCount').textContent = upcoming.length;
-}
 
 // Update Stats
 function updateStats() {
-  const total = applications.length;
-  const pending = applications.filter(a => a.status === 'applied').length;
-  const interviewing = applications.filter(a => a.status === 'interviewing').length;
-  
-  document.getElementById('totalApplications').textContent = total;
-  document.getElementById('pendingApps').textContent = pending;
-  document.getElementById('interviewCount').textContent = interviewing;
-  document.getElementById('chartTotal').textContent = total;
-  
-  // Load scam stats
+  // Load scam stats from local storage
   chrome.storage.local.get(['stats'], (result) => {
-    const stats = result.stats || {};
-    document.getElementById('scamsDetected').textContent = stats.scamsBlocked || 0;
-    document.getElementById('jobsAnalyzed').textContent = stats.jobsScanned || 0;
-    document.getElementById('scamsFound').textContent = stats.scamsBlocked || 0;
-    document.getElementById('safeJobs').textContent = (stats.jobsScanned || 0) - (stats.scamsBlocked || 0);
+    const stats = result.stats || { scamsBlocked: 0, jobsScanned: 0 };
+    const jobsScanned = stats.jobsScanned || 0;
+    const scamsBlocked = stats.scamsBlocked || 0;
+    const safeJobs = jobsScanned - scamsBlocked;
+    
+    console.log('📊 updateStats called with:', { jobsScanned, scamsBlocked, safeJobs });
+    
+    // Analytics metrics - update only elements that exist
+    const totalJobsEl = document.getElementById('totalJobsScanned');
+    if (totalJobsEl) totalJobsEl.textContent = jobsScanned;
+    
+    const scamsBlockedEl = document.getElementById('scamsBlocked');
+    if (scamsBlockedEl) scamsBlockedEl.textContent = scamsBlocked;
+    
+    const safeJobsEl = document.getElementById('safeJobsCount');
+    if (safeJobsEl) safeJobsEl.textContent = safeJobs;
+    
+    // Calculate and display scam detection rate
+    const detectionRate = jobsScanned > 0 ? Math.round((scamsBlocked / jobsScanned) * 100) : 0;
+    const detectionRateEl = document.getElementById('scamDetectionRate');
+    if (detectionRateEl) detectionRateEl.textContent = detectionRate + '%';
+    
+    console.log('✅ Stats updated:', { 
+      jobsScanned, 
+      scamsBlocked, 
+      safeJobs, 
+      detectionRate: detectionRate + '%'
+    });
+    
+    // Update activity chart
+    updateActivityChart(stats);
   });
+}
+
+// Update weekly activity chart
+function updateActivityChart(stats) {
+  const activityData = stats.dailyActivity || [0, 0, 0, 0, 0, 0, 0];
+  const maxValue = Math.max(...activityData, 1);
+  const barHeight = 80;
+  const barWidth = 30;
+  const spacing = 10;
   
-  // Calculate response rate
-  const withResponse = applications.filter(a => a.status !== 'applied' && a.status !== 'saved').length;
-  const responseRate = total > 0 ? Math.round((withResponse / total) * 100) : 0;
-  document.getElementById('responseRate').textContent = responseRate + '%';
+  const barsGroup = document.getElementById('bars');
+  const labelsGroup = document.getElementById('labels');
+  
+  if (!barsGroup || !labelsGroup) return;
+  
+  barsGroup.innerHTML = '';
+  labelsGroup.innerHTML = '';
+  
+  // Generate day labels with actual dates (7 days back)
+  const dayLabels = [];
+  for (let i = 0; i < 7; i++) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    dayLabels.unshift(`${month}/${day}`);
+  }
+  
+  activityData.forEach((value, index) => {
+    const x = index * (barWidth + spacing) + 15;
+    const height = maxValue > 0 ? (value / maxValue) * barHeight : 0;
+    const y = 100 - height;
+    
+    // Create bar
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', x);
+    rect.setAttribute('y', y);
+    rect.setAttribute('width', barWidth);
+    rect.setAttribute('height', height);
+    rect.setAttribute('fill', 'var(--color-primary)');
+    rect.setAttribute('rx', '3');
+    barsGroup.appendChild(rect);
+    
+    // Create label with date
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', x + barWidth / 2);
+    text.setAttribute('y', 115);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('font-size', '10');
+    text.setAttribute('fill', 'var(--text-secondary)');
+    text.textContent = dayLabels[index];
+    labelsGroup.appendChild(text);
+  });
 }
 
 // Event Listeners
@@ -441,19 +343,25 @@ function setupEventListeners() {
     chrome.storage.local.set({ theme });
   });
   
-  // Application form
-  document.getElementById('applicationForm').addEventListener('submit', handleApplicationSubmit);
-  
-  // Reminder form
-  document.getElementById('reminderForm').addEventListener('submit', handleReminderSubmit);
-  
-  // Search & Filters
-  document.getElementById('searchApps')?.addEventListener('input', filterApplications);
-  document.getElementById('statusFilter')?.addEventListener('change', filterApplications);
-  document.getElementById('sortFilter')?.addEventListener('change', filterApplications);
-  
   // Sync button
-  document.getElementById('syncBtn')?.addEventListener('click', syncData);
+  const syncBtn = document.getElementById('syncBtn');
+  console.log('🔍 Sync button found:', syncBtn);
+  if (syncBtn) {
+    syncBtn.addEventListener('click', () => {
+      console.log('🔘 Sync button clicked!');
+      syncData();
+    });
+  } else {
+    console.error('❌ Sync button not found in DOM');
+  }
+  
+  // Refresh data button
+  document.getElementById('refreshDataBtn')?.addEventListener('click', () => {
+    console.log('🔄 Refresh button clicked');
+    loadScanHistory();
+    updateStats();
+    showToast('Data refreshed', 'success');
+  });
   
   // Export data
   document.getElementById('exportData')?.addEventListener('click', exportData);
@@ -475,11 +383,6 @@ function setupEventListeners() {
   });
   
   // Settings toggles
-  document.getElementById('followUpReminders')?.addEventListener('change', (e) => {
-    settings.followUpReminders = e.target.checked;
-    chrome.storage.local.set({ settings });
-  });
-  
   document.getElementById('scamAlerts')?.addEventListener('change', (e) => {
     settings.scamAlerts = e.target.checked;
     chrome.storage.local.set({ settings });
@@ -490,234 +393,225 @@ function setupEventListeners() {
     chrome.storage.local.set({ settings });
     if (e.target.checked) syncData();
   });
+  
+  // Logout button
+  document.getElementById('logoutBtn')?.addEventListener('click', handleLogout);
+  
+  // Sign In button
+  document.getElementById('signInBtn')?.addEventListener('click', handleSignIn);
+  
+  // Fix Auth button
+  document.getElementById('fixAuthBtn')?.addEventListener('click', fixAuthentication);
+  
+  // Upgrade to Pro button
+  document.getElementById('upgradePlan')?.addEventListener('click', startCheckout);
+  
+  // Scan History filters and search
+  document.getElementById('searchScans')?.addEventListener('input', (e) => {
+    const filter = document.getElementById('riskFilter')?.value || 'all';
+    renderScanHistory(filter, e.target.value);
+  });
+  
+  document.getElementById('riskFilter')?.addEventListener('change', (e) => {
+    const search = document.getElementById('searchScans')?.value || '';
+    renderScanHistory(e.target.value, search);
+  });
 }
 
-// Handle Application Submit
-function handleApplicationSubmit(e) {
-  e.preventDefault();
+// Handle Sign In
+async function handleSignIn() {
+  showToast('Opening Google Sign In...', 'info');
   
-  const app = {
-    id: Date.now().toString(),
-    title: document.getElementById('jobTitle').value,
-    company: document.getElementById('company').value,
-    location: document.getElementById('location').value,
-    salary: document.getElementById('salary').value,
-    status: document.getElementById('status').value,
-    appliedDate: document.getElementById('appliedDate').value || new Date().toISOString().split('T')[0],
-    url: document.getElementById('jobUrl').value,
-    notes: document.getElementById('notes').value,
-    createdAt: new Date().toISOString()
-  };
-  
-  applications.push(app);
-  saveApplications();
-  renderApplications();
-  
-  // Close modal and reset form
-  closeModal(document.getElementById('addApplicationModal'));
-  e.target.reset();
-  
-  showToast('Application added successfully!', 'success');
-}
-
-// Handle Reminder Submit
-function handleReminderSubmit(e) {
-  e.preventDefault();
-  
-  const reminder = {
-    id: Date.now().toString(),
-    title: document.getElementById('reminderTitle').value,
-    applicationId: document.getElementById('reminderApp').value,
-    date: document.getElementById('reminderDate').value,
-    time: document.getElementById('reminderTime').value,
-    type: document.getElementById('reminderType').value,
-    notes: document.getElementById('reminderNotes').value,
-    createdAt: new Date().toISOString()
-  };
-  
-  reminders.push(reminder);
-  saveReminders();
-  renderReminders();
-  
-  // Schedule notification
-  scheduleReminder(reminder);
-  
-  // Close modal and reset form
-  closeModal(document.getElementById('addReminderModal'));
-  e.target.reset();
-  
-  showToast('Reminder added successfully!', 'success');
-}
-
-// Schedule Reminder
-function scheduleReminder(reminder) {
-  const reminderDate = new Date(`${reminder.date}T${reminder.time || '09:00'}`);
-  const now = new Date();
-  
-  if (reminderDate > now) {
-    const delay = reminderDate.getTime() - now.getTime();
+  try {
+    const response = await chrome.runtime.sendMessage({ action: 'signInWithGoogle' });
     
-    // Use Chrome alarms API
-    chrome.runtime.sendMessage({
-      action: 'scheduleReminder',
-      reminder: {
-        ...reminder,
-        scheduledFor: reminderDate.getTime()
+    if (response?.success) {
+      showToast('Signed in successfully!', 'success');
+      // Reload user data to update UI
+      await loadUserData();
+      // Reload the page to fully refresh state
+      setTimeout(() => window.location.reload(), 500);
+    } else {
+      showToast('Sign in failed: ' + (response?.error || 'Unknown error'), 'error');
+    }
+  } catch (error) {
+    console.error('Sign in error:', error);
+    showToast('Sign in failed. Please try again.', 'error');
+  }
+}
+
+// Handle Logout
+async function handleLogout() {
+  if (!confirm('Are you sure you want to sign out?')) return;
+  
+  showToast('Signing out...', 'info');
+  try {
+    const response = await chrome.runtime.sendMessage({ action: 'logout' });
+    if (response?.success) {
+      showToast('Signed out successfully', 'success');
+      // Reload the page to reset state
+      setTimeout(() => window.location.reload(), 1000);
+    } else {
+      showToast('Logout failed: ' + (response?.error || 'Unknown error'), 'error');
+    }
+  } catch (error) {
+    console.error('Logout error:', error);
+    showToast('Logout failed', 'error');
+  }
+}
+
+// Fix Authentication - Clear bad tokens and re-authenticate
+async function fixAuthentication() {
+  showToast('Fixing authentication...', 'info');
+  
+  try {
+    // First, clear any invalid tokens
+    await chrome.storage.local.remove(['authToken']);
+    console.log('Cleared stored auth token');
+    
+    // Try to refresh the token
+    const refreshResult = await chrome.runtime.sendMessage({ action: 'refreshToken' });
+    
+    if (refreshResult?.success) {
+      showToast('Authentication fixed! AI features should work now.', 'success');
+      // Reload user data
+      await loadUserData();
+    } else {
+      // If refresh failed, prompt user to sign in again
+      showToast('Please sign out and sign back in to fix authentication.', 'warning');
+      
+      // Offer to logout
+      if (confirm('Would you like to sign out now? You can sign back in after.')) {
+        await handleLogout();
       }
-    });
+    }
+  } catch (error) {
+    console.error('Fix auth error:', error);
+    showToast('Failed to fix authentication. Please try signing out and back in.', 'error');
   }
 }
 
-// Delete Application
-window.deleteApplication = function(id) {
-  if (confirm('Are you sure you want to delete this application?')) {
-    applications = applications.filter(a => a.id !== id);
-    saveApplications();
-    renderApplications();
-    showToast('Application deleted', 'success');
-  }
-};
-
-// Edit Application
-window.editApplication = function(id) {
-  const app = applications.find(a => a.id === id);
-  if (!app) return;
+// Start Stripe Checkout
+async function startCheckout() {
+  showToast('Starting checkout...', 'info');
   
-  // Populate form
-  document.getElementById('jobTitle').value = app.title;
-  document.getElementById('company').value = app.company;
-  document.getElementById('location').value = app.location || '';
-  document.getElementById('salary').value = app.salary || '';
-  document.getElementById('status').value = app.status;
-  document.getElementById('appliedDate').value = app.appliedDate || '';
-  document.getElementById('jobUrl').value = app.url || '';
-  document.getElementById('notes').value = app.notes || '';
-  
-  // Update form handler for edit
-  const form = document.getElementById('applicationForm');
-  form.onsubmit = (e) => {
-    e.preventDefault();
+  try {
+    // Get auth token (optional for basic checkout)
+    const result = await chrome.storage.local.get(['authToken']);
+    const token = result.authToken;
     
-    const index = applications.findIndex(a => a.id === id);
-    applications[index] = {
-      ...applications[index],
-      title: document.getElementById('jobTitle').value,
-      company: document.getElementById('company').value,
-      location: document.getElementById('location').value,
-      salary: document.getElementById('salary').value,
-      status: document.getElementById('status').value,
-      appliedDate: document.getElementById('appliedDate').value,
-      url: document.getElementById('jobUrl').value,
-      notes: document.getElementById('notes').value,
-      updatedAt: new Date().toISOString()
+    const headers = {
+      'Content-Type': 'application/json'
     };
     
-    saveApplications();
-    renderApplications();
-    closeModal(document.getElementById('addApplicationModal'));
-    form.reset();
-    form.onsubmit = handleApplicationSubmit;
-    showToast('Application updated!', 'success');
-  };
-  
-  openModal(document.getElementById('addApplicationModal'));
-};
-
-// Delete Reminder
-window.deleteReminder = function(id) {
-  reminders = reminders.filter(r => r.id !== id);
-  saveReminders();
-  renderReminders();
-  showToast('Reminder deleted', 'success');
-};
-
-// Filter Applications
-function filterApplications() {
-  const search = document.getElementById('searchApps').value.toLowerCase();
-  const status = document.getElementById('statusFilter').value;
-  const sort = document.getElementById('sortFilter').value;
-  
-  let filtered = [...applications];
-  
-  // Search filter
-  if (search) {
-    filtered = filtered.filter(a => 
-      a.title.toLowerCase().includes(search) ||
-      a.company.toLowerCase().includes(search)
-    );
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    // Call backend to create checkout session
+    const response = await fetch('http://localhost:3000/api/create-checkout', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({
+        priceId: process.env.STRIPE_PRICE_ID || 'price_1SeNEXRvKQf7z4L6T9GroSYi'
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Checkout error:', errorData);
+      showToast('Failed to start checkout: ' + (errorData.error || 'Unknown error'), 'error');
+      return;
+    }
+    
+    const data = await response.json();
+    
+    if (data.url) {
+      // Open Stripe checkout in new tab
+      chrome.tabs.create({ url: data.url });
+      showToast('Opening Stripe checkout...', 'success');
+    } else {
+      showToast('Checkout URL not returned from server', 'error');
+      console.error('No checkout URL in response:', data);
+    }
+  } catch (error) {
+    console.error('Checkout error:', error);
+    showToast('Failed to start checkout. Make sure backend is running on localhost:3000', 'error');
   }
-  
-  // Status filter
-  if (status !== 'all') {
-    filtered = filtered.filter(a => a.status === status);
-  }
-  
-  // Sort
-  switch (sort) {
-    case 'oldest':
-      filtered.sort((a, b) => new Date(a.appliedDate || a.createdAt) - new Date(b.appliedDate || b.createdAt));
-      break;
-    case 'company':
-      filtered.sort((a, b) => a.company.localeCompare(b.company));
-      break;
-    case 'status':
-      filtered.sort((a, b) => a.status.localeCompare(b.status));
-      break;
-    default: // newest
-      filtered.sort((a, b) => new Date(b.appliedDate || b.createdAt) - new Date(a.appliedDate || a.createdAt));
-  }
-  
-  // Render filtered
-  const grid = document.getElementById('applicationsGrid');
-  if (filtered.length === 0) {
-    grid.innerHTML = `
-      <div class="empty-state" style="grid-column: 1 / -1;">
-        <p>No applications match your filters</p>
-      </div>
-    `;
-    return;
-  }
-  
-  grid.innerHTML = filtered.map(app => `
-    <div class="app-card" data-id="${app.id}">
-      <div class="app-card-header">
-        <div>
-          <div class="app-card-title">${escapeHtml(app.title)}</div>
-          <div class="app-card-company">${escapeHtml(app.company)}</div>
-        </div>
-        <span class="status-badge ${app.status}">${capitalizeFirst(app.status)}</span>
-      </div>
-      <div class="app-card-details">
-        ${app.location ? `<div class="app-detail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${escapeHtml(app.location)}</div>` : ''}
-        <div class="app-detail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>${formatDate(app.appliedDate || app.createdAt)}</div>
-      </div>
-      <div class="app-card-actions">
-        <button class="btn btn-secondary" onclick="editApplication('${app.id}')">Edit</button>
-        <button class="btn btn-secondary" onclick="deleteApplication('${app.id}')">Delete</button>
-      </div>
-    </div>
-  `).join('');
 }
 
 // Sync Data
 async function syncData() {
+  console.log('====== SYNC DATA CALLED ======');
+  
+  // First, check auth status
+  try {
+    const authCheck = await chrome.runtime.sendMessage({ action: 'getAuthStatus' });
+    console.log('🔐 Auth Status:', JSON.stringify(authCheck, null, 2));
+    
+    if (!authCheck.authStatus?.isAuthenticated) {
+      console.error('❌ User not authenticated:', JSON.stringify(authCheck, null, 2));
+      showToast('Please sign in to sync data', 'error');
+      return;
+    }
+  } catch (e) {
+    console.error('❌ Failed to check auth:', e);
+    showToast('Authentication check failed', 'error');
+    return;
+  }
+  
   showToast('Syncing data...', 'info');
   
   try {
+    console.log('🔄 Starting sync with data:', { 
+      scanHistory: scanHistory.length
+    });
+    
     const response = await chrome.runtime.sendMessage({ 
       action: 'syncToCloud', 
-      applications, 
-      reminders 
+      scanHistory  // Include scan history in sync
     });
+    
+    console.log('📥 Sync response:', JSON.stringify(response, null, 2));
+    
     if (response?.success) {
+      // Save synced data from cloud to local storage
+      if (response.data) {
+        console.log('💾 Saving cloud data to local storage:', {
+          scanHistory: response.data.scanHistory?.length || 0
+        });
+        
+        // Update local data with cloud data
+        if (response.data.scanHistory) {
+          scanHistory = response.data.scanHistory;
+          await chrome.storage.local.set({ recentScans: response.data.scanHistory });
+        }
+        
+        // Reload UI with cloud data
+        await loadScanHistory();
+        updateStats();
+      }
+      
       showToast('Data synced successfully!', 'success');
     } else if (response?.error === 'not_authenticated') {
+      console.error('❌ Not authenticated:', JSON.stringify(response, null, 2));
       showToast('Please sign in to sync data', 'error');
+    } else if (response?.error === 'session_expired') {
+      console.warn('⚠️ Session expired:', JSON.stringify(response, null, 2));
+      showToast('Session expired. Attempting to refresh...', 'warning');
+      // Try to re-authenticate silently
+      const refreshResult = await chrome.runtime.sendMessage({ action: 'refreshToken' });
+      if (refreshResult?.success) {
+        showToast('Session refreshed! Please try syncing again.', 'success');
+      } else {
+        showToast('Please sign out and sign back in to continue.', 'error');
+      }
     } else {
-      showToast('Sync failed. Please try again.', 'error');
+      console.error('❌ Sync failed:', JSON.stringify(response, null, 2));
+      showToast(`Sync failed: ${response?.error || 'Unknown error'}`, 'error');
     }
   } catch (error) {
-    console.error('Sync error:', error);
+    console.error('💥 Sync error:', error);
     showToast('Sync failed. Please try again.', 'error');
   }
 }
@@ -725,8 +619,6 @@ async function syncData() {
 // Export Data
 function exportData() {
   const data = {
-    applications,
-    reminders,
     exportDate: new Date().toISOString(),
     version: '3.0.0'
   };
@@ -746,11 +638,7 @@ function exportData() {
 // Clear All Data
 function clearAllData() {
   if (confirm('Are you sure you want to clear ALL data? This cannot be undone.')) {
-    applications = [];
-    reminders = [];
-    chrome.storage.local.remove(['applications', 'reminders', 'stats']);
-    renderApplications();
-    renderReminders();
+    chrome.storage.local.remove(['stats']);
     updateStats();
     showToast('All data cleared', 'success');
   }
@@ -923,7 +811,7 @@ async function sendChatMessage() {
     const response = await chrome.runtime.sendMessage({
       action: 'chatWithAI',
       message,
-      context: { applications: applications.length, reminders: reminders.length }
+      context: {}
     });
     
     // Remove typing indicator
@@ -935,7 +823,19 @@ async function sendChatMessage() {
     } else if (response?.error === 'not_authenticated') {
       messagesContainer.innerHTML += `<div class="message assistant"><p>Please sign in to chat with AI assistant.</p></div>`;
     } else if (response?.error === 'session_expired') {
-      messagesContainer.innerHTML += `<div class="message assistant"><p>Your session has expired. Please sign out and sign back in to continue using AI features.</p></div>`;
+      // Try to refresh the token automatically
+      messagesContainer.innerHTML += `<div class="message assistant"><p>Session expired. Attempting to refresh your session...</p></div>`;
+      
+      try {
+        const refreshResult = await chrome.runtime.sendMessage({ action: 'refreshToken' });
+        if (refreshResult?.success) {
+          messagesContainer.innerHTML += `<div class="message assistant"><p>Session refreshed! Please send your message again.</p></div>`;
+        } else {
+          messagesContainer.innerHTML += `<div class="message assistant"><p>Could not refresh session. Please click "Logout" in the sidebar and sign in again.</p></div>`;
+        }
+      } catch (e) {
+        messagesContainer.innerHTML += `<div class="message assistant"><p>Please sign out and sign back in to continue using AI features.</p></div>`;
+      }
     } else {
       console.error('AI Chat error:', response);
       messagesContainer.innerHTML += `<div class="message assistant"><p>I'm sorry, I couldn't process that. Error: ${response?.error || 'Unknown error'}. Please try signing out and back in.</p></div>`;
@@ -976,4 +876,371 @@ function showToast(message, type = 'info') {
   setTimeout(() => {
     toast.classList.remove('show');
   }, 3000);
+}
+// ============================================
+// SCAN HISTORY FUNCTIONS
+// ============================================
+
+let scanHistory = [];
+
+async function loadScanHistory() {
+  return new Promise((resolve) => {
+    // Read from recentScans (where popup.js saves scans)
+    chrome.storage.local.get(['recentScans'], (result) => {
+      scanHistory = result.recentScans || [];
+      console.log('� loadScanHistory completed:', {
+        count: scanHistory.length,
+        items: scanHistory.slice(0, 3),  // Show first 3 items
+        storageKey: 'recentScans'
+      });
+      renderScanHistory();
+      resolve();
+    });
+  });
+}
+
+function renderScanHistory(filter = 'all', search = '') {
+  const list = document.getElementById('scanHistoryList');
+  if (!list) {
+    console.error('❌ scanHistoryList element not found');
+    return;
+  }
+  
+  console.log('📋 renderScanHistory: filter="%s", search="%s", scanHistory.length=%d', filter, search, scanHistory.length);
+  
+  let filtered = [...scanHistory];
+  
+  // Apply filter
+  if (filter !== 'all') {
+    filtered = filtered.filter(scan => {
+      const score = scan.riskScore || 0;
+      if (filter === 'safe') return score <= 30;
+      if (filter === 'caution') return score > 30 && score <= 60;  // Match HTML value
+      if (filter === 'danger') return score > 60;
+      return true;
+    });
+  }
+  
+  // Apply search
+  if (search) {
+    const searchLower = search.toLowerCase();
+    filtered = filtered.filter(scan => 
+      (scan.jobTitle || scan.title || '').toLowerCase().includes(searchLower) ||
+      (scan.company || '').toLowerCase().includes(searchLower) ||
+      (scan.url || '').toLowerCase().includes(searchLower)
+    );
+  }
+  
+  // Sort by date (newest first)
+  filtered.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+  
+  if (filtered.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <p>${search || filter !== 'all' ? 'No matching scans found' : 'No scan history yet'}</p>
+        <span>Analyzed job postings will appear here</span>
+      </div>
+    `;
+    return;
+  }
+  
+  list.innerHTML = filtered.map((scan, index) => {
+    const score = scan.riskScore || 0;
+    let riskClass = 'safe';
+    let riskLabel = 'Safe';
+    if (score > 60) {
+      riskClass = 'danger';
+      riskLabel = 'High Risk';
+    } else if (score > 30) {
+      riskClass = 'warning';
+      riskLabel = 'Caution';
+    }
+    
+    // Use jobTitle (from popup.js) or title as fallback
+    const title = scan.jobTitle || scan.title || 'Unknown Job';
+    const scanId = scan.id || scan.url || index;
+    
+    return `
+      <div class="scan-item" data-id="${scanId}">
+        <div class="scan-info">
+          <div class="scan-title">${escapeHtml(title)}</div>
+          <div class="scan-company">${escapeHtml(scan.company || 'Unknown Company')}</div>
+          <div class="scan-date">${formatDate(scan.timestamp)}</div>
+        </div>
+        <div class="scan-risk ${riskClass}">
+          <span class="risk-score">${score}</span>
+          <span class="risk-label">${riskLabel}</span>
+        </div>
+        <div class="scan-actions">
+          ${scan.url ? `<a href="${escapeHtml(scan.url)}" target="_blank" class="btn btn-secondary btn-sm">View</a>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="deleteScan('${scanId}')">Delete</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function deleteScan(scanId) {
+  if (!scanId) return;
+  
+  // Filter by id or url (since we use url as fallback id)
+  scanHistory = scanHistory.filter(scan => {
+    const id = scan.id || scan.url;
+    return id !== scanId;
+  });
+  // Save to recentScans (where popup.js reads from)
+  chrome.storage.local.set({ recentScans: scanHistory }, () => {
+    renderScanHistory();
+    showToast('Scan deleted', 'success');
+  });
+}
+
+function clearScanHistory() {
+  if (confirm('Are you sure you want to clear all scan history? This cannot be undone.')) {
+    scanHistory = [];
+    // Save to recentScans (where popup.js reads from)
+    chrome.storage.local.set({ recentScans: scanHistory }, () => {
+      renderScanHistory();
+      showToast('Scan history cleared', 'success');
+    });
+  }
+}
+
+// Setup scan history event listeners
+document.addEventListener('DOMContentLoaded', () => {
+  // Search
+  const searchInput = document.getElementById('scanHistorySearch');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const filter = document.getElementById('scanHistoryFilter')?.value || 'all';
+      renderScanHistory(filter, e.target.value);
+    });
+  }
+  
+  // Filter
+  const filterSelect = document.getElementById('scanHistoryFilter');
+  if (filterSelect) {
+    filterSelect.addEventListener('change', (e) => {
+      const search = document.getElementById('scanHistorySearch')?.value || '';
+      renderScanHistory(e.target.value, search);
+    });
+  }
+  
+  // Clear history button
+  const clearBtn = document.getElementById('clearScanHistory');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', clearScanHistory);
+  }
+});
+
+// ============================================
+// WHITELIST FUNCTIONS
+// ============================================
+
+let whitelist = [];
+
+async function loadWhitelist() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['whitelist'], (result) => {
+      whitelist = result.whitelist || [];
+      renderWhitelist();
+      resolve();
+    });
+  });
+}
+
+function renderWhitelist() {
+  const list = document.getElementById('whitelistList');
+  if (!list) return;
+  
+  if (whitelist.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+          <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+        <p>No whitelisted companies yet</p>
+        <span>Add trusted companies to skip safety warnings</span>
+      </div>
+    `;
+    return;
+  }
+  
+  list.innerHTML = whitelist.map(item => `
+    <div class="whitelist-item" data-domain="${escapeHtml(item.domain || item)}">
+      <div class="whitelist-info">
+        <div class="whitelist-domain">${escapeHtml(item.domain || item)}</div>
+        ${item.addedAt ? `<div class="whitelist-date">Added ${formatDate(item.addedAt)}</div>` : ''}
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="removeFromWhitelist('${escapeHtml(item.domain || item)}')">Remove</button>
+    </div>
+  `).join('');
+}
+
+function addToWhitelist() {
+  const input = document.getElementById('whitelistInput');
+  if (!input) return;
+  
+  const domain = input.value.trim().toLowerCase();
+  if (!domain) {
+    showToast('Please enter a domain', 'error');
+    return;
+  }
+  
+  // Validate domain format
+  if (!domain.includes('.') || domain.includes(' ')) {
+    showToast('Please enter a valid domain (e.g., google.com)', 'error');
+    return;
+  }
+  
+  // Check if already exists
+  const exists = whitelist.some(item => (item.domain || item) === domain);
+  if (exists) {
+    showToast('This domain is already whitelisted', 'error');
+    return;
+  }
+  
+  whitelist.push({
+    domain: domain,
+    addedAt: new Date().toISOString()
+  });
+  
+  chrome.storage.local.set({ whitelist }, () => {
+    renderWhitelist();
+    input.value = '';
+    showToast('Company added to whitelist', 'success');
+  });
+}
+
+function removeFromWhitelist(domain) {
+  whitelist = whitelist.filter(item => (item.domain || item) !== domain);
+  chrome.storage.local.set({ whitelist }, () => {
+    renderWhitelist();
+    showToast('Removed from whitelist', 'success');
+  });
+}
+
+// Setup whitelist event listeners
+document.addEventListener('DOMContentLoaded', () => {
+  // Add button
+  const addBtn = document.getElementById('addWhitelistBtn');
+  if (addBtn) {
+    addBtn.addEventListener('click', addToWhitelist);
+  }
+  
+  // Enter key to add
+  const input = document.getElementById('whitelistInput');
+  if (input) {
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        addToWhitelist();
+      }
+    });
+  }
+});
+
+// ============ DEBUG UTILITIES ============
+// Define debug functions on window object for debug console
+window.debugLog = function(msg) {
+  try {
+    const output = document.getElementById('debugOutput');
+    if (!output) return;
+    const line = document.createElement('div');
+    line.style.color = '#0f0';
+    line.style.marginBottom = '2px';
+    line.style.wordBreak = 'break-word';
+    line.style.whiteSpace = 'pre-wrap';
+    line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    output.appendChild(line);
+    output.scrollTop = output.scrollHeight;
+    console.log('[DEBUG]', msg);
+  } catch(e) {
+    console.error('debugLog error:', e);
+  }
+};
+
+window.debugCheckStorage = async function() {
+  window.debugLog('Checking chrome.storage.local...');
+  try {
+    const data = await chrome.storage.local.get(['recentScans', 'stats']);
+    const scans = data.recentScans || [];
+    const stats = data.stats || {};
+    window.debugLog(`✓ Storage accessible`);
+    window.debugLog(`Scans found: ${scans.length}`);
+    window.debugLog(`Jobs scanned stat: ${stats.jobsScanned || 0}`);
+    if (scans.length > 0) {
+      scans.slice(0, 3).forEach((s, i) => {
+        window.debugLog(`  [${i}] ${s.jobTitle} at ${s.company || 'unknown'}`);
+      });
+    } else {
+      window.debugLog('WARNING: recentScans is EMPTY!');
+    }
+  } catch(e) {
+    window.debugLog(`ERROR: ${e.message}`);
+  }
+};
+
+window.debugCreateTestScan = async function() {
+  window.debugLog('Creating test scan...');
+  try {
+    const data = await chrome.storage.local.get(['recentScans']);
+    let scans = data.recentScans || [];
+    scans.unshift({
+      jobTitle: 'TEST SCAN - QA Engineer',
+      company: 'AppleSafe Test Corp',
+      riskScore: 15,
+      timestamp: Date.now(),
+      url: 'https://test-applysafe.example.com'
+    });
+    await chrome.storage.local.set({ recentScans: scans });
+    window.debugLog(`✓ Test scan created!`);
+    window.debugLog(`Total scans in storage: ${scans.length}`);
+    window.debugLog('Check dashboard to see if it appears in recent scans');
+  } catch(e) {
+    window.debugLog(`ERROR: ${e.message}`);
+  }
+};
+
+window.debugClearOutput = function() {
+  const output = document.getElementById('debugOutput');
+  if (output) output.innerHTML = '';
+};
+
+// Set up debug console event listeners
+function setupDebugListeners() {
+  const toggle = document.getElementById('debugToggle');
+  const console_el = document.getElementById('debugConsole');
+  const checkBtn = document.getElementById('checkStorageBtn');
+  const testBtn = document.getElementById('testScanBtn');
+  const clearBtn = document.getElementById('clearDebugBtn');
+
+  if (!toggle) {
+    console.error('debugToggle button not found');
+    return;
+  }
+
+  toggle.addEventListener('click', () => {
+    if (console_el.style.display === 'none') {
+      console_el.style.display = 'block';
+      window.debugLog('Debug console opened');
+    } else {
+      console_el.style.display = 'none';
+    }
+  });
+
+  if (checkBtn) checkBtn.addEventListener('click', window.debugCheckStorage);
+  if (testBtn) testBtn.addEventListener('click', window.debugCreateTestScan);
+  if (clearBtn) clearBtn.addEventListener('click', window.debugClearOutput);
+}
+
+// Initialize debug listeners when page is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', setupDebugListeners);
+} else {
+  setupDebugListeners();
 }

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Scan History Data</title>
+    <style>
+        body { font-family: Arial; max-width: 600px; margin: 50px auto; padding: 20px; }
+        button { padding: 10px 20px; margin: 10px 5px 10px 0; cursor: pointer; font-size: 14px; }
+        #output { margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 5px; font-family: monospace; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y: auto; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>📋 Scan History Test Tool</h1>
+    <p>Add test scan data to Chrome storage to test the dashboard's Scan History tab.</p>
+    
+    <div>
+        <button onclick="addTestScans()">➕ Add 5 Test Scans</button>
+        <button onclick="addTestScans(10)">➕ Add 10 Test Scans</button>
+        <button onclick="viewData()">👁️ View Storage Data</button>
+        <button onclick="clearData()">🗑️ Clear All Scans</button>
+    </div>
+    
+    <div id="output"></div>
+
+    <script>
+        function log(message, isSuccess = true) {
+            const output = document.getElementById('output');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = isSuccess ? 'success' : 'error';
+            output.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function addTestScans(count = 5) {
+            const jobs = [
+                { title: 'Senior Software Engineer', company: 'Google', risk: 15 },
+                { title: 'Full Stack Developer', company: 'Amazon', risk: 20 },
+                { title: 'Work from Home Data Entry', company: 'Unknown Company', risk: 85 },
+                { title: 'Product Manager', company: 'Microsoft', risk: 25 },
+                { title: 'DevOps Engineer', company: 'Netflix', risk: 18 },
+                { title: 'Backend Engineer', company: 'Meta', risk: 22 },
+                { title: 'Quick Money Opportunity', company: 'Spam Inc', risk: 95 },
+                { title: 'React Developer', company: 'Airbnb', risk: 28 },
+                { title: 'Make $5000/week at home!', company: 'Scam Corp', risk: 98 },
+                { title: 'QA Automation Engineer', company: 'Apple', risk: 16 }
+            ];
+
+            chrome.storage.local.get(['recentScans'], (result) => {
+                let recentScans = result.recentScans || [];
+                log(`Current scans: ${recentScans.length}`);
+
+                for (let i = 0; i < count; i++) {
+                    const job = jobs[i % jobs.length];
+                    const scan = {
+                        id: 'test-' + Date.now() + '-' + i,
+                        url: `https://example.com/job/${i}`,
+                        jobTitle: job.title,
+                        company: job.company,
+                        riskScore: job.risk + Math.floor(Math.random() * 10),
+                        timestamp: Date.now() - (i * 60000) // Each scan 1 min older
+                    };
+                    recentScans.unshift(scan);
+                }
+
+                chrome.storage.local.set({ recentScans }, () => {
+                    log(`✅ Added ${count} test scans! Total: ${recentScans.length}`, true);
+                    log('Go to dashboard → Scan History to see them', true);
+                });
+            });
+        }
+
+        function viewData() {
+            chrome.storage.local.get(['recentScans', 'stats'], (result) => {
+                document.getElementById('output').textContent = 'Chrome Storage Data:\n\n' + 
+                    JSON.stringify(result, null, 2);
+                log('✅ Storage data displayed above', true);
+            });
+        }
+
+        function clearData() {
+            if (!confirm('Delete all scan data? Cannot undo.')) return;
+            
+            chrome.storage.local.set({ recentScans: [] }, () => {
+                log('🗑️ All scan data cleared', true);
+                document.getElementById('output').textContent = '';
+            });
+        }
+
+        // Show instructions on load
+        window.addEventListener('load', () => {
+            log('📌 Instructions:', true);
+            log('1. Click "Add Test Scans" button above', true);
+            log('2. Go to ApplySafe dashboard', true);
+            log('3. Click "Scan History" tab', true);
+            log('4. You should see test jobs listed', true);
+        });
+    </script>
+</body>
+</html>
