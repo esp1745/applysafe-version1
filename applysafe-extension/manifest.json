@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ApplySafe - AI Job Scam Detector",
   "version": "3.0.0",
-  "description": "AI-powered job scam detection with H1B verification, application tracking, cover letter generator, and cloud sync. Protect your job search.",
+  "description": "AI-powered job scam detection. Protect yourself from fraudulent job postings with instant analysis on LinkedIn, Indeed, and more.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
