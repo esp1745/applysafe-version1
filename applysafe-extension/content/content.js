@@ -1474,7 +1474,7 @@
             </svg>
             <div class="asw-brand">
               <h1>ApplySafe</h1>
-              <span>AI-Powered Protection</span>
+              <span>Keeping job seekers safe</span>
             </div>
           </div>
           <div class="asw-header-btns">
@@ -1494,198 +1494,100 @@
           </div>
         </div>
         
-        <!-- User Section -->
-        <div class="asw-user">
-          <div class="asw-avatar">
-            ${userAvatar ? `<img src="${userAvatar}" alt="">` : '👤'}
-          </div>
-          <div class="asw-user-info">
-            <div class="asw-user-name">${escapeHtml(userName)}</div>
-            <div class="asw-user-email">${escapeHtml(userEmail)}</div>
-          </div>
-          ${!isSignedIn ? '<button class="asw-signin-btn" id="asw-signin-btn">Sign In</button>' : '<button class="asw-logout-btn" id="asw-logout-btn">Logout</button>'}
-        </div>
-        
-        <!-- Trial/Pro Banner -->
-        ${isSignedIn && subscriptionData.status === 'active' ? `
-        <div class="asw-trial" style="background: #ecfdf5; border-color: #10b981;">
-          <span class="asw-trial-icon">✨</span>
-          <div class="asw-trial-info">
-            <div class="asw-trial-title" style="color: #059669;">Pro Plan</div>
-            <div class="asw-trial-text" style="color: #10b981;">Unlimited scans • All features</div>
-          </div>
-        </div>
-        ` : `
-        <div class="asw-trial">
-          <span class="asw-trial-icon">⏰</span>
-          <div class="asw-trial-info">
-            <div class="asw-trial-title">Free Trial</div>
-            <div class="asw-trial-text">${!isSignedIn ? 'Sign in to unlock Pro' : (subscriptionData.status === 'expired' ? 'Trial expired' : '7 days • 10 scans/day')}</div>
-          </div>
-          <button class="asw-upgrade-btn" id="asw-upgrade-btn">${isSignedIn ? 'Upgrade' : 'Sign In'}</button>
-        </div>
-        `}
-        
-        <!-- Stats Bar -->
-        <div class="asw-stats">
-          <div class="asw-stat">
-            <div class="asw-stat-num">${stats.threatsBlocked ?? 0}</div>
-            <div class="asw-stat-label">Threats Blocked</div>
-          </div>
-          <div class="asw-stat-divider"></div>
-          <div class="asw-stat">
-            <div class="asw-stat-num">${stats.jobsScanned ?? 0}</div>
-            <div class="asw-stat-label">Jobs Scanned</div>
-          </div>
-          <div class="asw-stat-divider"></div>
-          <div class="asw-stat">
-            <div class="asw-stat-num">${stats.safetyRate ?? '0%'}</div>
-            <div class="asw-stat-label">Safety Rate</div>
-          </div>
-        </div>
-        
-        <!-- Scrollable Content -->
-        <div class="asw-content">
-          ${data.guestLimitReached ? `
-          <!-- Guest Limit Reached -->
-          <div class="asw-risk" style="background: #f5f3ff;">
-            <div style="text-align: center; padding: 20px;">
-              <div style="font-size: 48px; margin-bottom: 12px;">🔒</div>
-              <h3 style="color: #7c3aed; margin-bottom: 8px;">Free Scans Used Up!</h3>
-              <p style="color: #6b7280; font-size: 13px; margin-bottom: 16px;">
-                You've used ${data.scansUsed || 3} of ${data.scanLimit || 3} free daily scans.<br>
-                Sign in for unlimited scans!
-              </p>
-              <button id="asw-guest-signin-btn" style="
-                padding: 12px 24px;
-                background: #8b5cf6;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-size: 14px;
-                font-weight: 600;
-                cursor: pointer;
-              ">Sign In with Google</button>
-              <p style="color: #9ca3af; font-size: 11px; margin-top: 12px;">
-                ✨ Free 7-day trial • No credit card required
-              </p>
+        <!-- Welcome Section -->
+        <div style="padding: 16px; border-bottom: 1px solid #e5e7eb;">
+          ${!isSignedIn ? `
+            <!-- Guest Mode -->
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+              <span style="font-size: 11px; background: #d1d5db; color: #4b5563; padding: 4px 8px; border-radius: 4px; font-weight: 500;">Guest Mode</span>
             </div>
-          </div>
+            <h2 style="margin: 0 0 4px 0; font-size: 18px; color: #111827; font-weight: 600;">Welcome to ApplySafe</h2>
+            <p style="margin: 0 0 12px 0; font-size: 13px; color: #6b7280;">Check jobs for scam and risk signals before applying</p>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div></div>
+              <div style="text-align: center; padding: 8px 12px; background: #f3f4f6; border-radius: 6px; font-size: 11px; font-weight: 500; color: #4b5563;">
+                <div style="font-size: 16px; font-weight: 700; color: #10b981;">1/5</div>
+                <div>Free scans left</div>
+              </div>
+            </div>
           ` : `
-          <!-- Risk Assessment -->
-          <div class="asw-risk">
-            <div class="asw-risk-top">
-              <div class="asw-risk-circle">
-                <span class="asw-risk-score">${score}</span>
-                <span class="asw-risk-label">Risk</span>
+            <!-- Returning User -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <div>
+                <h2 style="margin: 0 0 2px 0; font-size: 18px; color: #111827; font-weight: 600;">Welcome back, ${escapeHtml(userData?.name || 'User')}</h2>
+                <p style="margin: 0; font-size: 13px; color: #6b7280;">Here is your job risk and safety summary</p>
               </div>
-              <div class="asw-risk-info">
-                <h3>${riskLabel}</h3>
-                <p class="asw-job-title">${escapeHtml(data.jobTitle || 'Job Analysis')}</p>
-                <p class="asw-company">${escapeHtml(data.company || '')}</p>
+              <button style="padding: 8px 16px; background: #10b981; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">Upgrade</button>
+            </div>
+            <!-- Stats -->
+            <div style="display: flex; gap: 10px;">
+              <div style="flex: 1; padding: 12px; background: #f9fafb; border-radius: 8px; text-align: center;">
+                <div style="font-size: 16px; font-weight: 700; color: #111827;">${stats.jobsScanned ?? 0}</div>
+                <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">Job Scanned</div>
+              </div>
+              <div style="flex: 1; padding: 12px; background: #f9fafb; border-radius: 8px; text-align: center;">
+                <div style="font-size: 16px; font-weight: 700; color: #10b981;">${stats.safetyRate ?? 0}</div>
+                <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">Safe Jobs</div>
+              </div>
+              <div style="flex: 1; padding: 12px; background: #f9fafb; border-radius: 8px; text-align: center;">
+                <div style="font-size: 16px; font-weight: 700; color: #ef4444;">${stats.threatsBlocked ?? 0}</div>
+                <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">Threats Blocked</div>
               </div>
             </div>
-          </div>
           `}
-          
-          ${!data.guestLimitReached && data.positiveIndicators && data.positiveIndicators.length > 0 ? `
-          <!-- Positive Indicators -->
-          <div class="asw-section">
-            <div class="asw-section-title">✅ Positive Indicators</div>
-            <ul class="asw-list">
-              ${data.positiveIndicators.slice(0, 3).map(f => `<li>${escapeHtml(f)}</li>`).join('')}
-            </ul>
-          </div>
-          ` : ''}
-          
-          ${!data.guestLimitReached && data.redFlags && data.redFlags.length > 0 ? `
-          <!-- Red Flags -->
-          <div class="asw-section" style="background: #fef2f2;">
-            <div class="asw-section-title" style="color: #dc2626;">🚩 Red Flags Detected</div>
-            <ul class="asw-list">
-              ${data.redFlags.slice(0, 3).map(f => `<li>${escapeHtml(f)}</li>`).join('')}
-            </ul>
-          </div>
-          ` : ''}
-          
-          ${!data.guestLimitReached ? `
-          <!-- H-1B Section - Always show for company -->
-          <div class="asw-h1b" style="background: ${h1bSponsored ? '#ecfdf5' : '#fef3c7'}; border-color: ${h1bSponsored ? '#d1fae5' : '#fcd34d'};">
-            <div class="asw-h1b-badge" style="color: ${h1bSponsored ? '#059669' : '#92400e'};">
-              ${h1bSponsored ? '✅ Verified H-1B Sponsor' : '⚠️ H-1B Status Unknown'}
+        </div>
+        
+        <!-- Job Analysis -->
+        <div style="padding: 16px; border-bottom: 1px solid #e5e7eb;">
+          <div style="display: flex; gap: 12px;">
+            <div style="width: 60px; height: 60px; background: ${riskColor}; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; font-weight: 700; flex-shrink: 0;">
+              <div style="font-size: 24px;">${score}</div>
+              <div style="font-size: 10px;">${score === '—' ? 'Analyzing' : 'Score'}</div>
             </div>
-            ${h1bSponsored ? `
-            <div class="asw-h1b-stats">
-              <div class="asw-h1b-stat">
-                <div class="asw-h1b-stat-val">${(h1bData.totalApplications || h1bData.totalVisas || h1bData.visaCount || h1bData.history?.estimatedTotal || 0).toLocaleString()}+</div>
-                <div class="asw-h1b-stat-label">Total Visas</div>
-              </div>
-              <div class="asw-h1b-stat">
-                <div class="asw-h1b-stat-val">${h1bData.history?.years || h1bData.years || h1bData.yearRange || '2010-2024'}</div>
-                <div class="asw-h1b-stat-label">Active Years</div>
-              </div>
-              ${h1bData.medianSalary ? `
-              <div class="asw-h1b-stat">
-                <div class="asw-h1b-stat-val">$${(h1bData.medianSalary / 1000).toFixed(0)}k</div>
-                <div class="asw-h1b-stat-label">Median Salary</div>
-              </div>
-              ` : ''}
+            <div style="flex: 1;">
+              <h3 style="margin: 0 0 2px 0; font-size: 14px; font-weight: 600; color: ${riskColor};">${riskLabel}</h3>
+              <p style="margin: 0 0 4px 0; font-size: 13px; font-weight: 500; color: #111827;">${escapeHtml(data.jobTitle || 'Job Title')}</p>
+              <p style="margin: 0; font-size: 12px; color: #6b7280;">${escapeHtml(data.company || 'Company')}</p>
             </div>
-            <div style="font-size: 11px; color: #059669; margin-top: 8px;">
-              ${escapeHtml(h1bData.note || 'This company has sponsored H-1B visas')}
-            </div>
-            ` : `
-            <div style="font-size: 11px; color: #92400e;">
-              No H-1B sponsorship records found for this company. This doesn't mean they won't sponsor - check with the employer directly.
-            </div>
-            `}
           </div>
+        </div>
+        
+        <!-- Description Section -->
+        <div style="padding: 16px; border-bottom: 1px solid #e5e7eb;">
+          <h4 style="margin: 0 0 10px 0; font-size: 12px; font-weight: 600; color: #111827; text-transform: uppercase;">Description</h4>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            ${data.positiveIndicators && data.positiveIndicators.length > 0 ? data.positiveIndicators.slice(0, 3).map(indicator => `
+              <div style="display: flex; align-items: flex-start; gap: 8px; font-size: 12px;">
+                <span style="color: #10b981; font-weight: 700; flex-shrink: 0;">✓</span>
+                <span style="color: #4b5563;">${escapeHtml(indicator)}</span>
+              </div>
+            `).join('') : ''}
+            ${data.redFlags && data.redFlags.length > 0 ? data.redFlags.slice(0, 3).map(flag => `
+              <div style="display: flex; align-items: flex-start; gap: 8px; font-size: 12px;">
+                <span style="color: #ef4444; font-weight: 700; flex-shrink: 0;">✕</span>
+                <span style="color: #4b5563;">${escapeHtml(flag)}</span>
+              </div>
+            `).join('') : ''}
+          </div>
+        </div>
+        
+        <!-- Action Section -->
+        <div style="padding: 16px; border-bottom: 1px solid #e5e7eb;">
+          ${!isSignedIn ? `
+            <p id="asw-create-account-link" style="margin: 0 0 12px 0; font-size: 12px; color: #10b981; font-weight: 600; cursor: pointer;">
+              → Create a free account to get more scans
+            </p>
           ` : ''}
+          <div style="display: flex; gap: 8px;">
+            <button id="asw-report-btn" style="flex: 1; padding: 10px; background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">
+              🚨 Report job posting
+            </button>
+            <button id="asw-whitelist-btn" style="flex: 1; padding: 10px; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">
+              → Continue application
+            </button>
+          </div>
+        </div>
           
-          ${!data.guestLimitReached && data.explanation ? `
-          <!-- AI Analysis -->
-          <div class="asw-ai">
-            <div class="asw-ai-title">🤖 AI Analysis</div>
-            <div class="asw-ai-text">${escapeHtml(data.explanation.substring(0, 250))}${data.explanation.length > 250 ? '...' : ''}</div>
-          </div>
-          ` : ''}
-          
-          ${!data.guestLimitReached ? `
-          <!-- Actions -->
-          <div class="asw-actions">
-            <button class="asw-action-btn danger" id="asw-report-btn">🚨 Report Scam</button>
-            <button class="asw-action-btn" id="asw-whitelist-btn">✅ Whitelist</button>
-          </div>
-          
-          ${recentScans.length > 0 || isSignedIn ? `
-          <!-- Recent Scans - Only show for signed in users -->
-          <div class="asw-recent">
-            <div class="asw-recent-title">
-              Recent Scans
-              <a href="#" id="asw-view-all">View All</a>
-            </div>
-            ${recentScans.length > 0 ? recentScans.slice(0, 3).map(scan => `
-              <div class="asw-scan-item">
-                <div class="asw-scan-score ${scan.riskScore <= 30 ? 'safe' : scan.riskScore <= 60 ? 'warning' : 'danger'}">${scan.riskScore}</div>
-                <div class="asw-scan-info">
-                  <div class="asw-scan-title">${escapeHtml(scan.title || 'Unknown Job')}</div>
-                  <div class="asw-scan-company">${escapeHtml(scan.company || '')}</div>
-                </div>
-                <div class="asw-scan-time">${scan.time || 'Just now'}</div>
-              </div>
-            `).join('') : `
-              <div class="asw-scan-item">
-                <div class="asw-scan-score safe">${score}</div>
-                <div class="asw-scan-info">
-                  <div class="asw-scan-title">${escapeHtml(data.jobTitle || 'Current Job')}</div>
-                  <div class="asw-scan-company">${escapeHtml(data.company || '')}</div>
-                </div>
-                <div class="asw-scan-time">Just now</div>
-              </div>
-            `}
-          </div>
-          ` : ''}
-          ` : ''}
         </div>
         
         <!-- Footer -->
@@ -1781,6 +1683,24 @@
         } else {
           guestSigninBtn.disabled = false;
           guestSigninBtn.textContent = 'Sign In with Google';
+          alert(response?.error || 'Sign in failed. Please try again.');
+        }
+      });
+    });
+    
+    // Create free account link (for guest users)
+    const createAccountLink = widget.querySelector('#asw-create-account-link');
+    if (createAccountLink) createAccountLink.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'signIn' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Sign in error:', chrome.runtime.lastError);
+          return;
+        }
+        if (response && response.success) {
+          // Refresh widget after sign-in to re-analyze
+          widget.remove();
+          setTimeout(() => autoAnalyze(), 1000);
+        } else {
           alert(response?.error || 'Sign in failed. Please try again.');
         }
       });
