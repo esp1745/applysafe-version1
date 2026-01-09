@@ -1571,6 +1571,41 @@
           </div>
         </div>
         
+        <!-- H1B Section -->
+        <div style="padding: 16px; border-bottom: 1px solid #e5e7eb; ${h1bSponsored ? 'background: #ecfdf5;' : 'background: #fef3c7;'}">
+          <h4 style="margin: 0 0 10px 0; font-size: 12px; font-weight: 600; color: #111827; text-transform: uppercase;">H-1B Sponsorship</h4>
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+            <span style="font-size: 11px; background: ${h1bSponsored ? '#d1fae5' : '#fcd34d'}; color: ${h1bSponsored ? '#059669' : '#92400e'}; padding: 4px 8px; border-radius: 4px; font-weight: 600;">
+              ${h1bSponsored ? '✅ Verified Sponsor' : '⚠️ Status Unknown'}
+            </span>
+          </div>
+          ${h1bSponsored ? `
+            <div style="display: flex; gap: 12px;">
+              <div style="flex: 1;">
+                <div style="font-size: 14px; font-weight: 700; color: #059669;">${(h1bData.totalApplications || h1bData.totalVisas || h1bData.visaCount || h1bData.history?.estimatedTotal || 0).toLocaleString()}+</div>
+                <div style="font-size: 10px; color: #6b7280; margin-top: 2px;">Total Visas</div>
+              </div>
+              <div style="flex: 1;">
+                <div style="font-size: 14px; font-weight: 700; color: #059669;">${h1bData.history?.years || h1bData.years || h1bData.yearRange || '2010-2024'}</div>
+                <div style="font-size: 10px; color: #6b7280; margin-top: 2px;">Active Years</div>
+              </div>
+              ${h1bData.medianSalary ? `
+              <div style="flex: 1;">
+                <div style="font-size: 14px; font-weight: 700; color: #059669;">$${(h1bData.medianSalary / 1000).toFixed(0)}k</div>
+                <div style="font-size: 10px; color: #6b7280; margin-top: 2px;">Median Salary</div>
+              </div>
+              ` : ''}
+            </div>
+            <p style="margin: 10px 0 0 0; font-size: 11px; color: #059669;">
+              ${escapeHtml(h1bData.note || 'This company has sponsored H-1B visas')}
+            </p>
+          ` : `
+            <p style="margin: 0; font-size: 11px; color: #92400e;">
+              No H-1B sponsorship records found. This doesn't mean they won't sponsor — check with the employer directly.
+            </p>
+          `}
+        </div>
+        
         <!-- Action Section -->
         <div style="padding: 16px; border-bottom: 1px solid #e5e7eb;">
           ${!isSignedIn ? `
