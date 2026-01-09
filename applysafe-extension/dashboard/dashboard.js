@@ -236,12 +236,17 @@ async function loadUserData() {
 
 // Update Stats
 function updateStats() {
-  // Load scam stats from local storage
-  chrome.storage.local.get(['stats'], (result) => {
-    const stats = result.stats || { scamsBlocked: 0, jobsScanned: 0 };
-    const jobsScanned = stats.jobsScanned || 0;
-    const scamsBlocked = stats.scamsBlocked || 0;
-    const safeJobs = jobsScanned - scamsBlocked;
+  // Load scam stats from background service worker (same source as popup)
+  chrome.runtime.sendMessage({ action: 'getStats' }, (response) => {
+    if (!response || !response.stats) {
+      console.warn('Could not get stats from service worker');
+      return;
+    }
+    
+    const stats = response.stats;
+    const jobsScanned = stats.totalJobs || 0;
+    const scamsBlocked = stats.scamsCaught || 0;
+    const safeJobs = stats.safeJobs || (jobsScanned - scamsBlocked);
     
     console.log('📊 updateStats called with:', { jobsScanned, scamsBlocked, safeJobs });
     
