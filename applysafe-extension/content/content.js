@@ -735,35 +735,24 @@
       // Check if user is signed in
       const isSignedIn = !!settings.user?.email;
       
-      // If not signed in, check guest scan limit (3 free scans)
+      // If not signed in, check guest scan limit (5 free scans per day)
       if (!isSignedIn) {
-        const guestScans = settings.guestScans || { count: 0, lastReset: Date.now() };
-        const GUEST_SCAN_LIMIT = 3;
+        const GUEST_DAILY_LIMIT = 5;
+        const scansUsedToday = subscriptionData?.scansToday || 0;
         
-        // Reset daily
-        const today = new Date().setHours(0, 0, 0, 0);
-        const lastReset = new Date(guestScans.lastReset).setHours(0, 0, 0, 0);
-        if (today > lastReset) {
-          guestScans.count = 0;
-          guestScans.lastReset = Date.now();
-        }
-        
-        if (guestScans.count >= GUEST_SCAN_LIMIT) {
-          console.log('ApplySafe: Guest scan limit reached');
+        if (scansUsedToday >= GUEST_DAILY_LIMIT) {
+          console.log('ApplySafe: Guest scan limit reached:', scansUsedToday, '/', GUEST_DAILY_LIMIT);
           showFloatingWidget({ 
             guestLimitReached: true, 
             jobTitle: currentJobData.title, 
             company: currentJobData.company,
-            scansUsed: guestScans.count,
-            scanLimit: GUEST_SCAN_LIMIT
+            scansUsed: scansUsedToday,
+            scanLimit: GUEST_DAILY_LIMIT
           });
           return;
         }
         
-        // Increment guest scan count
-        guestScans.count++;
-        await chrome.storage.local.set({ guestScans });
-        console.log('ApplySafe: Guest scan', guestScans.count, '/', GUEST_SCAN_LIMIT);
+        console.log('ApplySafe: Guest scan', scansUsedToday + 1, '/', GUEST_DAILY_LIMIT);
       }
       
       console.log('ApplySafe: Starting auto-analysis...');
