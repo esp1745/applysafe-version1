@@ -777,13 +777,29 @@
       
       console.log('ApplySafe: Auto-analysis response:', response);
       
-      if (response && response.success && response.result) {
-        // Always show the floating widget with results
-        showFloatingWidget(response.result);
-      } else if (response && response.analysis) {
-        showFloatingWidget(response.analysis);
+      // Handle various response formats
+      if (response) {
+        if (response.success && response.result) {
+          // Standard success response
+          showFloatingWidget(response.result);
+        } else if (response.analysis) {
+          // Alternative response format
+          showFloatingWidget(response.analysis);
+        } else if (response.riskScore !== undefined) {
+          // Direct analysis object
+          showFloatingWidget(response);
+        } else if (!response.success && response.error) {
+          // Error response but still show widget with error state
+          console.log('ApplySafe: Analysis error from backend:', response.error);
+          showFloatingWidget({ error: true, message: response.message || response.error });
+        } else {
+          // Unexpected response format
+          console.warn('ApplySafe: Unexpected response format:', response);
+          showFloatingWidget({ error: true, jobTitle: currentJobData.title, company: currentJobData.company });
+        }
       } else {
-        // Show error state
+        // No response
+        console.warn('ApplySafe: No response from analysis');
         showFloatingWidget({ error: true, jobTitle: currentJobData.title, company: currentJobData.company });
       }
     } catch (error) {
