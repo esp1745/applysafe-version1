@@ -993,6 +993,24 @@
           overflow: hidden;
           flex-direction: column;
         }
+        .asw-expanded > div:not(.asw-header):not(.asw-footer) {
+          overflow-y: auto;
+          overflow-x: hidden;
+          flex: 1;
+        }
+        .asw-expanded > div:not(.asw-header):not(.asw-footer)::-webkit-scrollbar {
+          width: 8px;
+        }
+        .asw-expanded > div:not(.asw-header):not(.asw-footer)::-webkit-scrollbar-track {
+          background: #f9fafb;
+        }
+        .asw-expanded > div:not(.asw-header):not(.asw-footer)::-webkit-scrollbar-thumb {
+          background: #d1d5db;
+          border-radius: 4px;
+        }
+        .asw-expanded > div:not(.asw-header):not(.asw-footer)::-webkit-scrollbar-thumb:hover {
+          background: #9ca3af;
+        }
         #applysafe-floating-widget.expanded .asw-collapsed { display: none; }
         #applysafe-floating-widget.expanded .asw-expanded { display: flex; }
         
@@ -1494,6 +1512,8 @@
           </div>
         </div>
         
+        <!-- Scrollable Content -->
+        <div style="flex: 1; overflow-y: auto; overflow-x: hidden;">
         <!-- Welcome Section -->
         <div style="padding: 16px; border-bottom: 1px solid #e5e7eb;">
           ${!isSignedIn ? `
