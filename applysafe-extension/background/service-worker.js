@@ -73,8 +73,8 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       reports: []
     });
     
-    // Open welcome page for new users
-    chrome.tabs.create({ url: chrome.runtime.getURL('welcome/welcome.html') });
+    // Open landing page for new users
+    chrome.tabs.create({ url: chrome.runtime.getURL('landing/landing.html') });
   } else if (details.reason === 'update') {
     // Clear old cache on extension update to refresh H1B data
     console.log('ApplySafe: Extension updated, clearing old caches');

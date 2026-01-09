@@ -123,7 +123,7 @@
   "options_page": "options/options.html",
   "web_accessible_resources": [
     {
-      "resources": ["icons/*", "assets/*", "dashboard/*", "welcome/*"],
+      "resources": ["icons/*", "assets/*", "dashboard/*", "landing/*"],
       "matches": ["<all_urls>"]
     }
   ],
