@@ -1528,8 +1528,8 @@
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <div></div>
               <div style="text-align: center; padding: 8px 12px; background: #f3f4f6; border-radius: 6px; font-size: 11px; font-weight: 500; color: #4b5563;">
-                <div style="font-size: 16px; font-weight: 700; color: #10b981;">1/5</div>
-                <div>Free scans left</div>
+                <div style="font-size: 16px; font-weight: 700; color: #10b981;">${subscriptionData?.scansToday || 0}/5</div>
+                <div>Scans used today</div>
               </div>
             </div>
           ` : `
