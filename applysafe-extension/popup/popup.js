@@ -77,10 +77,8 @@ const elements = {
   whitelistBtn: document.getElementById('whitelistBtn'),
   checkUrlBtn: document.getElementById('checkUrlBtn'),
   urlInput: document.getElementById('urlInput'),
-  viewAllBtn: document.getElementById('viewAllBtn'),
   openSettings: document.getElementById('openSettings'),
   toggleTheme: document.getElementById('toggleTheme'),
-  openDashboardBtn: document.getElementById('openDashboard'),
   
   // Lists
   recentList: document.getElementById('recentList'),
@@ -203,16 +201,10 @@ function setupEventListeners() {
   });
   elements.reportBtn.addEventListener('click', handleReport);
   elements.whitelistBtn.addEventListener('click', handleWhitelist);
-  elements.viewAllBtn.addEventListener('click', openDashboard);
   
   // Theme toggle
   if (elements.toggleTheme) {
     elements.toggleTheme.addEventListener('click', toggleTheme);
-  }
-  
-  // Dashboard button
-  if (elements.openDashboardBtn) {
-    elements.openDashboardBtn.addEventListener('click', openDashboard);
   }
   
   // Add Refresh Status button event
@@ -1140,9 +1132,6 @@ async function handleWhitelist() {
 }
 
 // Open dashboard
-function openDashboard() {
-  chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/dashboard.html') });
-}
 
 // Open settings
 function openSettings() {
