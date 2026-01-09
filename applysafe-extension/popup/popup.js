@@ -5,31 +5,6 @@
 
 // DOM Elements
 const elements = {
-  // User Account
-  userAccountSection: document.getElementById('userAccountSection'),
-  anonymousUser: document.getElementById('anonymousUser'),
-  signedInUser: document.getElementById('signedInUser'),
-  emailSignInForm: document.getElementById('emailSignInForm'),
-  emailInput: document.getElementById('emailInput'),
-  emailSignInBtn: document.getElementById('emailSignInBtn'),
-  googleSignInBtn: document.getElementById('googleSignInBtn'),
-  signOutBtn: document.getElementById('signOutBtn'),
-  userAvatar: document.getElementById('userAvatar'),
-  userName: document.getElementById('userName'),
-  userEmail: document.getElementById('userEmail'),
-  
-  // Subscription
-  subscriptionBanner: document.getElementById('subscriptionBanner'),
-  bannerTitle: document.getElementById('bannerTitle'),
-  bannerMessage: document.getElementById('bannerMessage'),
-  bannerIcon: document.getElementById('bannerIcon'),
-  upgradeBtn: document.getElementById('upgradeBtn'),
-  
-  // Stats
-  scamsBlocked: document.getElementById('scamsBlocked'),
-  jobsScanned: document.getElementById('jobsScanned'),
-  safetyScore: document.getElementById('safetyScore'),
-  
   // States
   loadingState: document.getElementById('loadingState'),
   noJobState: document.getElementById('noJobState'),
