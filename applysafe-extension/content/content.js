@@ -1011,6 +1011,17 @@
         .asw-expanded > div:not(.asw-header):not(.asw-footer)::-webkit-scrollbar-thumb:hover {
           background: #9ca3af;
         }
+        
+        /* Footer - Always at bottom */
+        .asw-footer {
+          padding: 10px 16px;
+          background: #f9fafb;
+          border-top: 1px solid #e5e7eb;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-shrink: 0;
+        }
         #applysafe-floating-widget.expanded .asw-collapsed { display: none; }
         #applysafe-floating-widget.expanded .asw-expanded { display: flex; }
         
@@ -1427,15 +1438,6 @@
           color: #9ca3af;
         }
         
-        /* Footer */
-        .asw-footer {
-          padding: 10px 16px;
-          background: #f9fafb;
-          border-top: 1px solid #e5e7eb;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
         .asw-footer-text {
           font-size: 9px;
           color: #9ca3af;
