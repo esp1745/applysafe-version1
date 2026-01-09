@@ -78,10 +78,6 @@ async function canUseFeature(featureName = 'scan') {
     
     // Check daily scan limit during trial
     if (featureName === 'scan') {
-      if (subscription.scansToday >= SUBSCRIPTION_CONFIG.DAILY_SCAN_LIMIT_FREE) {
-        return false;
-      }
-      
       // Increment scan count
       subscription.scansToday++;
       await chrome.storage.local.set({ subscription });

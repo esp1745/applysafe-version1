@@ -10,14 +10,13 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "ApplySafe - Check this job posting"
+    "default_title": "ApplySafe - Analyzing job postings in real-time"
   },
   "permissions": [
     "storage",
