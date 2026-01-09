@@ -432,10 +432,8 @@ async function handleSignIn() {
     
     if (response?.success) {
       showToast('Signed in successfully!', 'success');
-      // Reload user data to update UI
-      await loadUserData();
-      // Reload the page to fully refresh state
-      setTimeout(() => window.location.reload(), 500);
+      // Reload the page to fully refresh state and display user info
+      setTimeout(() => window.location.reload(), 800);
     } else {
       showToast('Sign in failed: ' + (response?.error || 'Unknown error'), 'error');
     }
@@ -454,8 +452,10 @@ async function handleLogout() {
     const response = await chrome.runtime.sendMessage({ action: 'logout' });
     if (response?.success) {
       showToast('Signed out successfully', 'success');
-      // Reload the page to reset state
-      setTimeout(() => window.location.reload(), 1000);
+      // Clear all user data from storage
+      await chrome.storage.local.remove(['userData', 'authToken', 'subscriptionData']);
+      // Reload the page to reset state and clear all UI
+      setTimeout(() => window.location.reload(), 800);
     } else {
       showToast('Logout failed: ' + (response?.error || 'Unknown error'), 'error');
     }
