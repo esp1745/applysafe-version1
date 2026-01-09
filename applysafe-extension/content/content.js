@@ -1606,6 +1606,16 @@
           `}
         </div>
         
+        <!-- AI Analysis Section -->
+        <div style="padding: 16px; border-bottom: 1px solid #e5e7eb; background: #f0f9ff;">
+          <h4 style="margin: 0 0 10px 0; font-size: 12px; font-weight: 600; color: #0369a1; text-transform: uppercase; display: flex; align-items: center; gap: 6px;">
+            🤖 AI Analysis
+          </h4>
+          <p style="margin: 0; font-size: 12px; color: #0c4a6e; line-height: 1.5;">
+            ${escapeHtml(data.explanation ? data.explanation.substring(0, 300) : 'Analyzing job posting...')}${data.explanation && data.explanation.length > 300 ? '...' : ''}
+          </p>
+        </div>
+        
         <!-- Action Section -->
         <div style="padding: 16px; border-bottom: 1px solid #e5e7eb;">
           ${!isSignedIn ? `
