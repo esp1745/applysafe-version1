@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+*.zip
+screenshots/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Secrets
+.env
+.env.local
+.vercel
+.env*
+
+# ML: raw dataset and regenerable tensor caches (see ml/src/preprocess.py)
+ml/data/*.csv
+ml/artifacts/train.pt
+ml/artifacts/val.pt
+ml/artifacts/test.pt

@@ -3,7 +3,10 @@
   "builds": [
     {
       "src": "server.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "excludeFiles": "node_modules/onnxruntime-node/bin/napi-v3/{darwin,win32}/**"
+      }
     }
   ],
   "routes": [

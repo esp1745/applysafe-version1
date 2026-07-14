@@ -16,7 +16,8 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "ApplySafe - Analyzing job postings in real-time"
+    "default_title": "ApplySafe - Analyzing job postings in real-time",
+    "default_popup": "popup/popup.html"
   },
   "permissions": [
     "storage",

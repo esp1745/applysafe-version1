@@ -5,9 +5,11 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
-const mongoose = require('mongoose');
 const Anthropic = require('@anthropic-ai/sdk');
+const sequelize = require('./database');
 const User = require('./models/User');
+const UserData = require('./models/UserData');
+const { scoreJobPosting } = require('./ml/predict');
 
 const app = express();
 
@@ -28,38 +30,23 @@ const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;
 
-// Connect to MongoDB Atlas
-const mongoUri = process.env.MONGODB_URI || 'mongodb+srv://esparance7_db_user:T1qUNMo1dciOMjEi@cluster0.pgium5y.mongodb.net/applysafe?retryWrites=true&w=majority';
-
-let cachedConnection = null;
+// Connect to Postgres (Supabase)
+let dbReady = false;
 
 async function connectToDatabase() {
-  if (cachedConnection && mongoose.connection.readyState === 1) {
-    return cachedConnection;
+  if (dbReady) {
+    return sequelize;
   }
-  
-  // Close any existing pending connections
-  if (mongoose.connection.readyState === 2) {
-    try {
-      await mongoose.connection.close();
-    } catch (e) {
-      // Ignore close errors
-    }
-  }
-  
+
   try {
-    mongoose.set('bufferCommands', false);
-    cachedConnection = await mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 10000,
-      connectTimeoutMS: 10000,
-      socketTimeoutMS: 45000,
-      maxPoolSize: 10,
-    });
-    console.log('✅ Connected to MongoDB Atlas');
-    return cachedConnection;
+    await sequelize.authenticate();
+    await sequelize.sync();
+    dbReady = true;
+    console.log(' Connected to Postgres (Supabase)');
+    return sequelize;
   } catch (err) {
-    console.error('❌ MongoDB connection error:', err.message);
-    cachedConnection = null;
+    console.error(' Postgres connection error:', err.message);
+    dbReady = false;
     throw err;
   }
 }
@@ -74,25 +61,20 @@ const userUsage = new Map();
 
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
-  let mongoStatus = mongoose.connection.readyState;
-  const mongoStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
   let connectionError = null;
-  
-  // Try to connect if not already connected
-  if (mongoStatus !== 1) {
+
+  if (!dbReady) {
     try {
       await connectToDatabase();
-      mongoStatus = mongoose.connection.readyState;
     } catch (err) {
       connectionError = err.message;
     }
   }
-  
+
   res.json({
-    status: mongoStatus === 1 ? 'ok' : 'degraded',
+    status: dbReady ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
-    mongodb: mongoStates[mongoStatus] || 'unknown',
-    mongoReadyState: mongoStatus,
+    postgres: dbReady ? 'connected' : 'disconnected',
     connectionError: connectionError,
     anthropic: !!anthropic,
     stripe: !!process.env.STRIPE_SECRET_KEY
@@ -127,14 +109,30 @@ app.post('/api/analyze-job', async (req, res) => {
     // For now, we'll rely on subscription checks
     
     console.log('Processing AI analysis request for:', jobData?.title || 'custom prompt');
-    
+
+    // Score with our custom-trained classifier as an extra signal for Claude.
+    // Not used as a standalone verdict - it false-positives on the short,
+    // sparsely-scraped postings the extension typically produces, since it
+    // was trained on a richer schema (company_profile, requirements, etc.)
+    // than the extension scrapes.
+    let mlScore = null;
+    if (jobData && !prompt) {
+      try {
+        const result = await scoreJobPosting(jobData);
+        mlScore = result.probability;
+        console.log('ML classifier score:', mlScore.toFixed(4));
+      } catch (mlError) {
+        console.error('ML scoring failed (continuing with Claude only):', mlError.message);
+      }
+    }
+
     // Call Claude API
     const message = await anthropic.messages.create({
-      model: 'claude-3-haiku-20240307',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
       messages: [{
         role: 'user',
-        content: prompt || buildAnalysisPrompt(jobData)
+        content: prompt || buildAnalysisPrompt(jobData, mlScore)
       }]
     });
     
@@ -174,6 +172,7 @@ app.post('/api/analyze-job', async (req, res) => {
     res.json({
       success: true,
       analysis: analysis,
+      mlScore: mlScore,
       usage: {
         input_tokens: message.usage?.input_tokens,
         output_tokens: message.usage?.output_tokens
@@ -199,7 +198,21 @@ app.post('/api/analyze-job', async (req, res) => {
 });
 
 // Helper function to build analysis prompt
-function buildAnalysisPrompt(jobData) {
+function buildAnalysisPrompt(jobData, mlScore) {
+  const mlContext = mlScore === null || mlScore === undefined
+    ? ''
+    : `
+INTERNAL ML CLASSIFIER SIGNAL (advisory only, do not defer to it):
+Our custom-trained classifier scored this posting ${Math.round(mlScore * 100)}% likely fraudulent.
+This classifier was trained on postings with rich structured metadata (company profile, listed
+requirements/benefits, logo presence) that this scraped posting mostly lacks, so it is KNOWN to
+false-positive on short/sparse-but-legitimate postings, and to miss scams involving check-cashing,
+money orders, or wire-transfer-via-Western-Union schemes (patterns absent from its training data).
+Treat this score as one weak, unreliable hint alongside your own independent read of the text below
+- do not let a high score override your judgment on an otherwise clean, ordinary posting, and do not
+let a low score wave through language matching check/wire-transfer scam patterns.
+`;
+
   return `You are an expert job scam detector. Analyze this job posting and provide a balanced risk assessment.
 
 JOB POSTING DATA:
@@ -211,7 +224,7 @@ Description: ${(jobData.description || '').substring(0, 3000)}
 
 Contact Emails Found: ${(jobData.contactEmail || []).join(', ') || 'None'}
 Company Domain: ${jobData.companyDomain || 'Unknown'}
-
+${mlContext}
 SCORING GUIDELINES:
 - Well-known companies (Fortune 500, major tech, consulting firms like TCS, Infosys, Accenture, Google, Amazon, Microsoft, etc.) should score 5-20 unless there are CRITICAL red flags
 - Missing salary is NORMAL for many legitimate jobs - do NOT heavily penalize this
@@ -258,7 +271,7 @@ Most legitimate postings from known companies should score 5-25. Reserve 30+ for
 app.get('/api/ai-status', (req, res) => {
   res.json({
     aiEnabled: !!anthropic,
-    model: 'claude-3-haiku-20240307',
+    model: 'claude-haiku-4-5-20251001',
     status: anthropic ? 'ready' : 'not configured'
   });
 });
@@ -384,10 +397,10 @@ app.post('/api/subscription-status', async (req, res) => {
       customer = licenseData?.customerId;
     }
     
-    // If no customer ID but email provided, look up user in MongoDB
+    // If no customer ID but email provided, look up user in Postgres
     if (!customer && email) {
       try {
-        userFromDb = await User.findOne({ email });
+        userFromDb = await User.findOne({ where: { email } });
         if (userFromDb && userFromDb.stripeCustomerId) {
           customer = userFromDb.stripeCustomerId;
           console.log('Found customer by email:', email, customer);
@@ -403,7 +416,7 @@ app.post('/api/subscription-status', async (req, res) => {
           });
         }
       } catch (dbError) {
-        console.error('MongoDB lookup error:', dbError.message);
+        console.error('Postgres lookup error:', dbError.message);
         // Continue without DB lookup
       }
     }
@@ -518,10 +531,10 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
       
       console.log('License created:', licenseKey);
 
-      // Update user subscription status to active in MongoDB
-      let user = await User.findOne({ stripeCustomerId: session.customer });
+      // Update user subscription status to active in Postgres
+      let user = await User.findOne({ where: { stripeCustomerId: session.customer } });
       if (!user && session.customer_email) {
-        user = await User.findOne({ email: session.customer_email });
+        user = await User.findOne({ where: { email: session.customer_email } });
       }
       if (user) {
         user.subscriptionStatus = 'active';
@@ -881,34 +894,34 @@ app.post('/api/auth/google', async (req, res) => {
       }
     }
 
-    // Find or create user in MongoDB
-    let user = await User.findOne({ email });
-    
+    // Find or create user in Postgres
+    await connectToDatabase();
+    let user = await User.findOne({ where: { email } });
+
     if (!user) {
       // Create new user
-      user = new User({
+      user = User.build({
         googleId,
         email,
         name,
         picture,
         subscriptionStatus: 'free',
-        trialStartDate: new Date(),
-        createdAt: new Date()
+        trialStartDate: new Date()
       });
       await user.save();
-      console.log('✅ New user created in MongoDB:', { email, name });
+      console.log('✅ New user created in Postgres:', { email, name });
     } else {
       // Update existing user with latest info
       user.name = name;
       user.picture = picture;
       user.googleId = googleId;
       await user.save();
-      console.log('✅ User updated in MongoDB:', { email, name });
+      console.log('✅ User updated in Postgres:', { email, name });
     }
 
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user._id, email: user.email },
+      { userId: user.id, email: user.email },
       JWT_SECRET,
       { expiresIn: '30d' }
     );
@@ -917,7 +930,7 @@ app.post('/api/auth/google', async (req, res) => {
 
     res.json({
       success: true,
-      userId: user._id,
+      userId: user.id,
       token,
       subscriptionStatus: user.subscriptionStatus,
       trialInfo: getUserTrialInfo(user)
@@ -943,9 +956,9 @@ app.post('/api/auth/email', async (req, res) => {
     // Ensure database connection
     await connectToDatabase();
 
-    // Find or create user in MongoDB
-    let user = await User.findOne({ email });
-    
+    // Find or create user in Postgres
+    let user = await User.findOne({ where: { email } });
+
     if (!user) {
       // Create new user
       user = await User.create({
@@ -966,7 +979,7 @@ app.post('/api/auth/email', async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user._id, email: user.email },
+      { userId: user.id, email: user.email },
       JWT_SECRET,
       { expiresIn: '30d' }
     );
@@ -975,10 +988,10 @@ app.post('/api/auth/email', async (req, res) => {
 
     res.json({
       success: true,
-      userId: user._id,
+      userId: user.id,
       token,
       user: {
-        id: user._id,
+        id: user.id,
         email: user.email,
         name: user.name,
         picture: user.picture
@@ -1278,12 +1291,12 @@ const verifyUser = async (req, res, next) => {
     
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, JWT_SECRET);
-    
-    const user = await User.findOne({ email: decoded.email });
+
+    const user = await User.findOne({ where: { email: decoded.email } });
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
     }
-    
+
     req.user = user;
     next();
   } catch (error) {
@@ -1295,62 +1308,56 @@ const verifyUser = async (req, res, next) => {
 app.post('/api/v3/sync', verifyUser, async (req, res) => {
   try {
     const { applications, reminders, scanHistory, lastSync } = req.body;
-    const userId = req.user._id;
-    
+    const userId = req.user.id;
+
     console.log('📥 Sync request from user:', userId, {
       applications: applications?.length || 0,
       reminders: reminders?.length || 0,
       scanHistory: scanHistory?.length || 0
     });
-    
-    // Get or create user data document
-    let userData = await mongoose.connection.db.collection('userdata').findOne({ userId });
-    
+
+    // Get or create user data row
+    let userData = await UserData.findOne({ where: { userId } });
+
     if (!userData) {
       // First sync - save everything
-      await mongoose.connection.db.collection('userdata').insertOne({
+      await UserData.create({
         userId,
         applications: applications || [],
         reminders: reminders || [],
         scanHistory: scanHistory || [],
         lastSync: new Date()
       });
-      
+
       return res.json({
         success: true,
         message: 'Initial sync complete',
-        data: { 
-          applications: applications || [], 
+        data: {
+          applications: applications || [],
           reminders: reminders || [],
           scanHistory: scanHistory || []
         }
       });
     }
-    
+
     // Merge data - prefer newer items
     const mergedApps = mergeArrays(userData.applications || [], applications || [], 'id');
     const mergedReminders = mergeArrays(userData.reminders || [], reminders || [], 'id');
     const mergedScanHistory = mergeArrays(userData.scanHistory || [], scanHistory || [], 'url');
-    
+
     console.log('✅ Merged data:', {
       applications: mergedApps.length,
       reminders: mergedReminders.length,
       scanHistory: mergedScanHistory.length
     });
-    
+
     // Update database
-    await mongoose.connection.db.collection('userdata').updateOne(
-      { userId },
-      {
-        $set: {
-          applications: mergedApps,
-          reminders: mergedReminders,
-          scanHistory: mergedScanHistory,
-          lastSync: new Date()
-        }
-      }
-    );
-    
+    userData.applications = mergedApps;
+    userData.reminders = mergedReminders;
+    userData.scanHistory = mergedScanHistory;
+    userData.lastSync = new Date();
+    await userData.save();
+
     res.json({
       success: true,
       message: 'Sync complete',
@@ -1369,9 +1376,9 @@ app.post('/api/v3/sync', verifyUser, async (req, res) => {
 // Get synced data
 app.get('/api/v3/sync', verifyUser, async (req, res) => {
   try {
-    const userId = req.user._id;
-    const userData = await mongoose.connection.db.collection('userdata').findOne({ userId });
-    
+    const userId = req.user.id;
+    const userData = await UserData.findOne({ where: { userId } });
+
     res.json({
       success: true,
       data: {
@@ -1465,7 +1472,7 @@ Do NOT use generic phrases like "I am writing to express my interest" or "I am a
 Make it specific, compelling, and tailored to the job.`;
 
     const message = await anthropic.messages.create({
-      model: 'claude-3-haiku-20240307',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }]
     });
@@ -1530,7 +1537,7 @@ Provide a detailed analysis in this exact JSON format:
 }`;
 
     const message = await anthropic.messages.create({
-      model: 'claude-3-haiku-20240307',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }]
     });
@@ -1610,7 +1617,7 @@ Format as JSON:
 }`;
 
     const message = await anthropic.messages.create({
-      model: 'claude-3-haiku-20240307',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }]
     });
@@ -1666,7 +1673,7 @@ User question: ${message}
 Provide a helpful, actionable response.`;
 
     const response = await anthropic.messages.create({
-      model: 'claude-3-haiku-20240307',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 500,
       messages: [{ role: 'user', content: prompt }]
     });
@@ -1700,20 +1707,20 @@ const verifyAdmin = (req, res, next) => {
 // Get all users (admin only)
 app.get('/api/admin/users', verifyAdmin, async (req, res) => {
   try {
-    const users = await User.find({}).sort({ createdAt: -1 });
-    
+    const users = await User.findAll({ order: [['createdAt', 'DESC']] });
+
     const stats = {
       totalUsers: users.length,
       proUsers: users.filter(u => u.subscriptionStatus === 'active' || u.subscriptionStatus === 'pro').length,
       freeUsers: users.filter(u => u.subscriptionStatus === 'free' || !u.subscriptionStatus).length,
       trialUsers: users.filter(u => u.subscriptionStatus === 'trial').length,
     };
-    
+
     res.json({
       success: true,
       stats,
       users: users.map(u => ({
-        id: u._id,
+        id: u.id,
         email: u.email,
         name: u.name,
         picture: u.picture,
@@ -1731,7 +1738,7 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
 // Get user count (public - for landing page)
 app.get('/api/stats/users', async (req, res) => {
   try {
-    const count = await User.countDocuments();
+    const count = await User.count();
     res.json({ userCount: count });
   } catch (error) {
     res.status(500).json({ error: 'Failed to get stats' });
@@ -1896,8 +1903,10 @@ app.get('/admin', (req, res) => {
 app.get('/api/admin/users', async (req, res) => {
   try {
     await connectToDatabase();
-    const users = await User.find({}, 'email name createdAt lastLogin loginCount totalScans totalJobsAnalyzed subscriptionStatus');
-    
+    const users = await User.findAll({
+      attributes: ['id', 'email', 'name', 'createdAt', 'lastLogin', 'loginCount', 'totalScans', 'totalJobsAnalyzed', 'subscriptionStatus']
+    });
+
     res.json({
       success: true,
       totalUsers: users.length,
@@ -1913,16 +1922,16 @@ app.get('/api/admin/users', async (req, res) => {
 app.get('/api/user/stats/:email', async (req, res) => {
   try {
     await connectToDatabase();
-    const user = await User.findOne({ email: req.params.email });
-    
+    const user = await User.findOne({ where: { email: req.params.email } });
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     res.json({
       success: true,
       user: {
-        id: user._id,
+        id: user.id,
         email: user.email,
         name: user.name,
         createdAt: user.createdAt,
@@ -1950,27 +1959,25 @@ app.post('/api/user/activity', async (req, res) => {
     }
     
     await connectToDatabase();
-    const user = await User.findOne({ email });
-    
+    const user = await User.findOne({ where: { email } });
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     // Add activity to log
-    user.activityLog = user.activityLog || [];
-    user.activityLog.push({
-      action,
-      timestamp: new Date(),
-      details: details || {}
-    });
-    
+    user.activityLog = [
+      ...(user.activityLog || []),
+      { action, timestamp: new Date(), details: details || {} }
+    ];
+
     // Update user with activity log and metrics
     if (action === 'scan') {
       user.totalScans = (user.totalScans || 0) + 1;
     } else if (action === 'sync') {
       user.lastSyncDate = new Date();
     }
-    
+
     await user.save();
     
     res.json({ success: true, message: 'Activity logged' });
@@ -1984,15 +1991,15 @@ app.post('/api/user/activity', async (req, res) => {
 app.get('/api/admin/stats', async (req, res) => {
   try {
     await connectToDatabase();
-    const totalUsers = await User.countDocuments();
-    const freeUsers = await User.countDocuments({ subscriptionStatus: 'free' });
-    const trialUsers = await User.countDocuments({ subscriptionStatus: 'trial' });
-    const paidUsers = await User.countDocuments({ subscriptionStatus: 'paid' });
-    
-    const users = await User.find();
+    const totalUsers = await User.count();
+    const freeUsers = await User.count({ where: { subscriptionStatus: 'free' } });
+    const trialUsers = await User.count({ where: { subscriptionStatus: 'trial' } });
+    const paidUsers = await User.count({ where: { subscriptionStatus: 'paid' } });
+
+    const users = await User.findAll();
     const totalScans = users.reduce((sum, user) => sum + (user.totalScans || 0), 0);
     const totalJobs = users.reduce((sum, user) => sum + (user.totalJobsAnalyzed || 0), 0);
-    const premiumUsers = await User.countDocuments({ isPremium: true });
+    const premiumUsers = await User.count({ where: { isPremium: true } });
     
     res.json({
       success: true,

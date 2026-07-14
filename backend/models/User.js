@@ -1,26 +1,29 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../database');
 
-const userSchema = new mongoose.Schema({
-  email: { type: String, required: true, unique: true, lowercase: true },
-  name: String,
-  picture: String,
-  authProvider: { type: String, enum: ['google', 'email'], default: 'email' },
-  subscriptionStatus: { type: String, enum: ['free', 'trial', 'paid'], default: 'free' },
-  isPremium: { type: Boolean, default: false },
-  trialStartDate: Date,
-  createdAt: { type: Date, default: Date.now },
-  lastLogin: Date,
-  loginCount: { type: Number, default: 0 },
-  lastSyncDate: Date,
-  totalScans: { type: Number, default: 0 },
-  totalJobsAnalyzed: { type: Number, default: 0 },
-  activityLog: [
-    {
-      action: String,
-      timestamp: { type: Date, default: Date.now },
-      details: mongoose.Schema.Types.Mixed
+const User = sequelize.define('User', {
+  email: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    unique: true,
+    set(value) {
+      this.setDataValue('email', value.toLowerCase());
     }
-  ]
+  },
+  name: DataTypes.STRING,
+  picture: DataTypes.STRING,
+  googleId: DataTypes.STRING,
+  authProvider: { type: DataTypes.ENUM('google', 'email'), defaultValue: 'email' },
+  stripeCustomerId: DataTypes.STRING,
+  subscriptionStatus: { type: DataTypes.ENUM('free', 'trial', 'active', 'paid'), defaultValue: 'free' },
+  isPremium: { type: DataTypes.BOOLEAN, defaultValue: false },
+  trialStartDate: DataTypes.DATE,
+  lastLogin: DataTypes.DATE,
+  loginCount: { type: DataTypes.INTEGER, defaultValue: 0 },
+  lastSyncDate: DataTypes.DATE,
+  totalScans: { type: DataTypes.INTEGER, defaultValue: 0 },
+  totalJobsAnalyzed: { type: DataTypes.INTEGER, defaultValue: 0 },
+  activityLog: { type: DataTypes.JSONB, defaultValue: [] }
 });
 
-module.exports = mongoose.model('User', userSchema);
+module.exports = User;

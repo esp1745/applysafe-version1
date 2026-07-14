@@ -1,7 +1,12 @@
 const { Sequelize } = require('sequelize');
+// Sequelize requires the 'pg' dialect module dynamically at runtime, which
+// Vercel's static file tracer can't detect. Requiring it explicitly here
+// forces the tracer to bundle it into the serverless function.
+require('pg');
+require('pg-hstore');
 require('dotenv').config();
 
-// Create connection to PostgreSQL
+// Create connection to PostgreSQL (Supabase)
 const sequelize = new Sequelize(
   process.env.DATABASE_URL || 'postgres://user:password@localhost:5432/applysafe',
   {
@@ -13,13 +18,10 @@ const sequelize = new Sequelize(
       acquire: 30000,
       idle: 10000
     },
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    dialectOptions: process.env.DATABASE_URL
+      ? { ssl: { require: true, rejectUnauthorized: false } }
+      : {}
   }
 );
-
-// Test connection
-sequelize.authenticate()
-  .then(() => console.log('✅ PostgreSQL connection successful'))
-  .catch(err => console.error('❌ PostgreSQL connection failed:', err.message));
 
 module.exports = sequelize;

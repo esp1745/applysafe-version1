@@ -91,7 +91,7 @@
   --color-safe-light: rgba(16, 185, 129, 0.2);
   --color-warning-light: rgba(245, 158, 11, 0.2);
   --color-danger-light: rgba(239, 68, 68, 0.2);
-  --color-primary-light: rgba(99, 102, 241, 0.2);
+  --color-primary-light: rgba(16, 185, 129, 0.2);
 }
 
 * {
@@ -601,6 +601,7 @@ body {
    ============================================ */
 
 .loading-state {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -960,10 +961,6 @@ body {
   flex-shrink: 0;
 }
 
-.h1b-content {
-  flex: 1;
-}
-
 .h1b-text {
   font-size: 0.85rem;
   color: var(--color-gray-700);
@@ -996,148 +993,6 @@ body {
 
 .h1b-content {
   flex: 1;
-}
-
-/* H1B Sponsorship History */
-.h1b-history {
-  margin-top: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
-  background: rgba(255, 255, 255, 0.7);
-  border-radius: var(--radius-md);
-  border: 1px solid rgba(99, 102, 241, 0.15);
-}
-
-.h1b-history-header {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--color-primary-dark);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  margin-bottom: var(--spacing-sm);
-}
-
-.h1b-history-stats {
-  display: flex;
-  gap: var(--spacing-md);
-  justify-content: space-around;
-}
-
-.h1b-stat {
-  text-align: center;
-  flex: 1;
-}
-
-.h1b-stat-value {
-  display: block;
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--color-primary);
-}
-
-.h1b-stat-label {
-  display: block;
-  font-size: 0.65rem;
-  color: var(--color-gray-500);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  margin-top: 2px;
-}
-
-.h1b-tier {
-  margin-top: var(--spacing-sm);
-  text-align: center;
-}
-
-.h1b-tier-badge {
-  display: inline-block;
-  padding: 3px 8px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
-  color: #92400E;
-  border: 1px solid #F59E0B;
-}
-
-.h1b-tier-badge.major {
-  background: linear-gradient(135deg, #DBEAFE 0%, #BFDBFE 100%);
-  color: #1E40AF;
-  border: 1px solid #3B82F6;
-}
-
-/* H1B Feedback Section */
-.h1b-feedback {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--spacing-xs);
-  margin-top: var(--spacing-sm);
-  padding-top: var(--spacing-sm);
-  border-top: 1px dashed rgba(99, 102, 241, 0.2);
-}
-
-.h1b-feedback-prompt {
-  font-size: 0.75rem;
-  color: var(--color-gray-500);
-}
-
-.h1b-feedback-buttons {
-  display: flex;
-  gap: var(--spacing-sm);
-}
-
-.h1b-feedback-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 12px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  border: 1px solid var(--color-gray-300);
-  border-radius: var(--radius-md);
-  background: var(--color-white);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.h1b-feedback-btn:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  background: var(--color-primary-light);
-}
-
-.h1b-feedback-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.h1b-feedback-btn.selected {
-  opacity: 1 !important;
-}
-
-.h1b-feedback-yes:hover:not(:disabled),
-.h1b-feedback-yes.selected {
-  border-color: var(--color-safe);
-  background: var(--color-safe-light);
-  color: var(--color-safe-dark);
-}
-
-.h1b-feedback-no:hover:not(:disabled),
-.h1b-feedback-no.selected {
-  border-color: var(--color-danger);
-  background: rgba(239, 68, 68, 0.1);
-  color: #B91C1C;
-}
-
-.h1b-feedback-thanks {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.75rem;
-  color: var(--color-safe);
-  font-weight: 500;
 }
 
 /* H1B Sponsorship History */
@@ -1296,7 +1151,7 @@ body {
 .ai-explanation {
   padding: var(--spacing-md) var(--spacing-lg);
   background: var(--color-primary-light);
-  border-top: 1px solid rgba(99, 102, 241, 0.2);
+  border-top: 1px solid rgba(16, 185, 129, 0.2);
 }
 
 .explanation-header {

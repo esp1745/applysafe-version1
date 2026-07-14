@@ -181,32 +181,39 @@
   function isJobPostingPage() {
     const url = window.location.href.toLowerCase();
     const hostname = window.location.hostname.toLowerCase();
-    
+
     // LinkedIn-specific checks
     if (hostname.includes('linkedin.com')) {
-      // Valid job URLs contain /jobs/ or /job-view/ (also allow LinkedIn jobs URLs with parameters)
-      if (url.includes('/jobs/view/') || url.includes('/jobs/collections/') || 
-          url.includes('/job-view/') || url.includes('/jobs/') && !url.includes('/jobs/search')) {
-        // Additional validation: make sure it's not just the jobs home page
-        // Check if there's actual job content on the page
-        const hasJobTitle = document.querySelector(
-          'h1, .job-details-jobs-unified-top-card__job-title, ' +
-          '.jobs-unified-top-card__job-title, .topcard__title'
-        );
-        if (hasJobTitle && hasJobTitle.textContent.trim().length > 0) {
-          return true;
-        }
-        // If no job title found but we're in /jobs/, still might be a job page (loading)
-        if (url.includes('/jobs/view/') || url.includes('/job-view/')) {
-          return true;
-        }
-      }
-      // Exclude profile pages, feed, messaging, etc.
-      if (url.includes('/in/') || url.includes('/feed') || url.includes('/messaging') || 
+      // Exclude non-job pages first
+      if (url.includes('/in/') || url.includes('/feed') || url.includes('/messaging') ||
           url.includes('/mynetwork') || url.includes('/notifications')) {
         console.log('ApplySafe: Skipping - this is a LinkedIn profile/feed page, not a job posting');
         return false;
       }
+
+      const jobTitleSelector =
+        'h1, .job-details-jobs-unified-top-card__job-title, ' +
+        '.jobs-unified-top-card__job-title, .topcard__title';
+
+      // Direct job view URL — always valid, even while still loading
+      if (url.includes('/jobs/view/') || url.includes('/job-view/') || url.includes('/jobs/collections/')) {
+        const el = document.querySelector(jobTitleSelector);
+        if (el && el.textContent.trim().length > 0) return true;
+        return true; // page may still be loading
+      }
+
+      // Search page with a job selected in the side panel (most common browsing pattern)
+      if (url.includes('/jobs/search') && url.includes('currentjobid=')) {
+        const el = document.querySelector(jobTitleSelector);
+        return !!(el && el.textContent.trim().length > 0);
+      }
+
+      // Generic /jobs/ URL — only show if job content is present
+      if (url.includes('/jobs/')) {
+        const el = document.querySelector(jobTitleSelector);
+        return !!(el && el.textContent.trim().length > 0);
+      }
+
       return false;
     }
     
@@ -734,27 +741,7 @@
       
       // Check if user is signed in
       const isSignedIn = !!settings.user?.email;
-      
-      // If not signed in, check guest scan limit (5 free scans per day)
-      if (!isSignedIn) {
-        const GUEST_DAILY_LIMIT = 5;
-        const scansUsedToday = subscriptionData?.scansToday || 0;
-        
-        if (scansUsedToday >= GUEST_DAILY_LIMIT) {
-          console.log('ApplySafe: Guest scan limit reached:', scansUsedToday, '/', GUEST_DAILY_LIMIT);
-          showFloatingWidget({ 
-            guestLimitReached: true, 
-            jobTitle: currentJobData.title, 
-            company: currentJobData.company,
-            scansUsed: scansUsedToday,
-            scanLimit: GUEST_DAILY_LIMIT
-          });
-          return;
-        }
-        
-        console.log('ApplySafe: Guest scan', scansUsedToday + 1, '/', GUEST_DAILY_LIMIT);
-      }
-      
+
       console.log('ApplySafe: Starting auto-analysis...');
       
       // Show loading state immediately
@@ -1932,17 +1919,14 @@
       else if (window.location.hostname.includes('linkedin.com')) {
         // LinkedIn uses a job details panel that updates without URL change sometimes
         const currentTitle = document.querySelector('.job-details-jobs-unified-top-card__job-title, .jobs-unified-top-card__job-title')?.textContent?.trim();
-        if (currentTitle && currentTitle !== lastJobTitle && lastJobTitle !== null) {
-          console.log('ApplySafe: LinkedIn job panel changed without URL change');
-          console.log('  Old title:', lastJobTitle);
-          console.log('  New title:', currentTitle);
+        if (currentTitle && currentTitle !== lastJobTitle) {
+          console.log('ApplySafe: LinkedIn job panel changed, re-processing');
+          console.log('  Old title:', lastJobTitle, '→ New title:', currentTitle);
           processed = false;
-          currentJobData = null;  // Clear old data
+          currentJobData = null;
           lastJobTitle = currentTitle;
           hideWarningBadge();
           setTimeout(processPage, 1000);
-        } else if (currentTitle && lastJobTitle === null) {
-          lastJobTitle = currentTitle;
         }
       }
     }, 300);  // Check more frequently (300ms instead of 500ms)

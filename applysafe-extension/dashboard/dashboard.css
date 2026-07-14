@@ -18,10 +18,6 @@
   --color-safe-light: #D1FAE5;
   --color-safe-dark: #059669;
   
-  --color-primary: #10B981;
-  --color-primary-light: #D1FAE5;
-  --color-primary-dark: #059669;
-  
   --color-warning: #F59E0B;
   --color-warning-light: #FEF3C7;
   --color-warning-dark: #D97706;
@@ -995,7 +991,7 @@ body {
 /* Analytics */
 .analytics-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: var(--spacing-xl);
 }
 
@@ -1007,7 +1003,7 @@ body {
 }
 
 .analytics-card.full-width {
-  grid-column: span 3;
+  grid-column: span 4;
 }
 
 .analytics-card h3 {
@@ -1378,13 +1374,23 @@ form {
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .analytics-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .analytics-card.full-width {
     grid-column: span 2;
+  }
+}
+
+@media (max-width: 900px) {
+  .analytics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-card.full-width {
+    grid-column: span 1;
   }
 }
 
