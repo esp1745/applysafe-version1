@@ -1,20 +1,16 @@
 {
-  "version": 2,
-  "builds": [
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
     {
-      "src": "server.js",
-      "use": "@vercel/node",
-      "config": {
-        "excludeFiles": "node_modules/onnxruntime-node/bin/napi-v3/{darwin,win32}/**"
-      }
+      "source": "/(.*)",
+      "destination": "/api"
     }
   ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "server.js"
+  "functions": {
+    "api/index.js": {
+      "excludeFiles": "node_modules/onnxruntime-node/bin/napi-v3/{darwin,win32}/**"
     }
-  ],
+  },
   "env": {
     "NODE_ENV": "production"
   }

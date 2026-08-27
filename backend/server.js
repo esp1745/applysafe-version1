@@ -2181,7 +2181,7 @@ app.get('/api/admin/stats', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 // For local development
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== 'production' && require.main === module) {
   app.listen(PORT, () => {
     console.log(`ApplySafe backend running on port ${PORT}`);
     console.log(`Stripe configured: ${!!process.env.STRIPE_SECRET_KEY}`);
