@@ -125,12 +125,12 @@ function switchTab(tabName) {
   
   // Update header
   const titles = {
-    'overview': { title: 'Overview', description: 'Track your job search progress' },
-    'ai-tools': { title: 'AI Tools', description: 'Powered by advanced AI' },
+    'overview': { title: 'Overview', description: 'Review risky listings and trusted employers' },
+    'ai-tools': { title: 'Career Tools', description: 'Draft faster and prepare with better context' },
     'analytics': { title: 'Analytics', description: 'Insights into your job search' },
     'settings': { title: 'Settings', description: 'Customize your experience' },
-    'scan-history': { title: 'Scan History', description: 'All job postings you have analyzed' },
-    'whitelist': { title: 'Whitelist', description: 'Trusted companies that won\'t trigger warnings' }
+    'scan-history': { title: 'Scan History', description: 'Every listing your extension has reviewed' },
+    'whitelist': { title: 'Trusted Companies', description: 'Employers you trust and want to skip' }
   };
   
   const info = titles[tabName] || titles['overview'];
@@ -420,6 +420,22 @@ function setupEventListeners() {
   document.getElementById('riskFilter')?.addEventListener('change', (e) => {
     const search = document.getElementById('searchScans')?.value || '';
     renderScanHistory(e.target.value, search);
+  });
+
+  document.getElementById('scanHistoryList')?.addEventListener('click', (e) => {
+    const deleteBtn = e.target.closest('[data-action="delete-scan"]');
+    if (!deleteBtn) return;
+
+    const scanId = decodeURIComponent(deleteBtn.dataset.scanId || '');
+    deleteScan(scanId);
+  });
+
+  document.getElementById('whitelistGrid')?.addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('[data-action="remove-whitelist"]');
+    if (!removeBtn) return;
+
+    const domain = decodeURIComponent(removeBtn.dataset.domain || '');
+    removeFromWhitelist(domain);
   });
 }
 
@@ -968,6 +984,7 @@ function renderScanHistory(filter = 'all', search = '') {
     // Use jobTitle (from popup.js) or title as fallback
     const title = scan.jobTitle || scan.title || 'Unknown Job';
     const scanId = scan.id || scan.url || index;
+    const encodedScanId = encodeURIComponent(String(scanId));
     
     return `
       <div class="scan-item" data-id="${scanId}">
@@ -982,7 +999,7 @@ function renderScanHistory(filter = 'all', search = '') {
         </div>
         <div class="scan-actions">
           ${scan.url ? `<a href="${escapeHtml(scan.url)}" target="_blank" class="btn btn-secondary btn-sm">View</a>` : ''}
-          <button class="btn btn-secondary btn-sm" onclick="deleteScan('${scanId}')">Delete</button>
+          <button class="btn btn-secondary btn-sm" data-action="delete-scan" data-scan-id="${encodedScanId}">Delete</button>
         </div>
       </div>
     `;
@@ -1059,7 +1076,7 @@ async function loadWhitelist() {
 }
 
 function renderWhitelist() {
-  const list = document.getElementById('whitelistList');
+  const list = document.getElementById('whitelistGrid');
   if (!list) return;
   
   if (whitelist.length === 0) {
@@ -1082,7 +1099,7 @@ function renderWhitelist() {
         <div class="whitelist-domain">${escapeHtml(item.domain || item)}</div>
         ${item.addedAt ? `<div class="whitelist-date">Added ${formatDate(item.addedAt)}</div>` : ''}
       </div>
-      <button class="btn btn-secondary btn-sm" onclick="removeFromWhitelist('${escapeHtml(item.domain || item)}')">Remove</button>
+      <button class="btn btn-secondary btn-sm" data-action="remove-whitelist" data-domain="${encodeURIComponent(String(item.domain || item))}">Remove</button>
     </div>
   `).join('');
 }

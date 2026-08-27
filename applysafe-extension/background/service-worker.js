@@ -36,9 +36,9 @@ try {
 
 // Configuration
 const CONFIG = {
-  BACKEND_URL: 'http://localhost:3000',
-  API_ENDPOINT: 'http://localhost:3000/api/analyze-job',
-  MODEL: 'claude-3-haiku-20240307', // Fast and cost-effective for this use case
+  BACKEND_URL: 'https://applysafe-version1.vercel.app',
+  API_ENDPOINT: 'https://applysafe-version1.vercel.app/api/analyze-job',
+  MODEL: 'claude-haiku-4-5-20251001', // Fast and cost-effective for this use case
   MAX_TOKENS: 1024,
   CACHE_DURATION: 3600000, // 1 hour in ms
   RATE_LIMIT_DELAY: 500, // 500ms between API calls (only for auto-analysis)
@@ -47,6 +47,96 @@ const CONFIG = {
 
 // State
 let lastApiCall = 0;
+
+function isSupportedJobUrl(url) {
+  if (!url || !/^https?:/i.test(url)) {
+    return false;
+  }
+
+  try {
+    const parsedUrl = new URL(url);
+    const host = parsedUrl.hostname.toLowerCase();
+    const path = parsedUrl.pathname.toLowerCase();
+
+    if (host.includes('linkedin.com')) return path.includes('/jobs/');
+    if (host.includes('indeed.com')) return true;
+    if (host.includes('glassdoor.com')) return path.includes('/job-listing/') || path.includes('/job/');
+    if (host.includes('ziprecruiter.com')) return path.includes('/jobs/');
+    if (host.includes('monster.com')) return path.includes('/job-openings/');
+    if (host.includes('simplyhired.com')) return path.includes('/job/');
+    if (host.includes('dice.com')) return path.includes('/job-detail/');
+    if (host.includes('careerbuilder.com')) return path.includes('/job-');
+    if (host.includes('angel.co') || host.includes('wellfound.com')) return path.includes('/jobs/');
+    if (host.includes('upwork.com')) return path.includes('/jobs/');
+    if (host.includes('flexjobs.com')) return path.includes('/job/');
+    if (host.includes('remote.co')) return path.includes('/job/');
+    if (host.includes('weworkremotely.com')) return path.includes('/remote-jobs/');
+    if (host.includes('remoteok.com')) return true;
+    if (host.includes('careers.google.com')) return path.includes('/jobs/');
+    if (host.includes('google.com')) return path.includes('/about/careers/applications/jobs/');
+    if (host === 'boards.greenhouse.io' || host.endsWith('greenhouse.io')) return true;
+    if (host === 'jobs.lever.co' || host.endsWith('lever.co')) return true;
+    if (host.includes('myworkdayjobs.com')) return true;
+    if (host.endsWith('bamboohr.com')) return path.includes('/careers/');
+    if (host.endsWith('icims.com')) return path.includes('/jobs/');
+    if (host.endsWith('smartrecruiters.com')) return path.includes('/jobs/');
+    if (
+      host.endsWith('jobvite.com') ||
+      host.endsWith('taleo.net') ||
+      host.endsWith('breezy.hr') ||
+      host.endsWith('ashbyhq.com') ||
+      host.endsWith('recruitee.com')
+    ) {
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    return false;
+  }
+}
+
+async function ensureContentScriptReady(tabId, url) {
+  if (!tabId || !isSupportedJobUrl(url)) {
+    return false;
+  }
+
+  try {
+    const ping = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+    if (ping?.alive) {
+      return true;
+    }
+  } catch (error) {
+    console.log('ApplySafe: Content script ping failed, attempting reinjection');
+  }
+
+  try {
+    await chrome.scripting.insertCSS({
+      target: { tabId },
+      files: ['content/content.css']
+    }).catch(() => {});
+
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content/content.js']
+    });
+
+    console.log('ApplySafe: Content script injected into tab', tabId);
+    return true;
+  } catch (error) {
+    console.log('ApplySafe: Could not inject content script into tab', tabId, error?.message || error);
+    return false;
+  }
+}
+
+async function refreshOpenJobTabs() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    await Promise.all(tabs.map(tab => ensureContentScriptReady(tab.id, tab.url)));
+  } catch (error) {
+    console.log('ApplySafe: Could not refresh open job tabs', error?.message || error);
+  }
+}
 
 // Initialize extension
 chrome.runtime.onInstalled.addListener(async (details) => {
@@ -79,6 +169,23 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     console.log('ApplySafe: Extension updated, clearing old caches');
     await chrome.storage.local.remove(['analysisCache', 'h1bCache']);
   }
+
+  await refreshOpenJobTabs();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  refreshOpenJobTabs().catch(error => {
+    console.log('ApplySafe: Startup refresh skipped', error?.message || error);
+  });
+});
+
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    await ensureContentScriptReady(tabId, tab?.url);
+  } catch (error) {
+    console.log('ApplySafe: Could not inspect active tab', error?.message || error);
+  }
 });
 
 // Listen for successful payment completion
@@ -105,6 +212,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     } catch (e) {
       console.error('Error processing payment success:', e);
     }
+  }
+
+  if (tab.url && (changeInfo.status === 'complete' || changeInfo.url)) {
+    await ensureContentScriptReady(tabId, tab.url);
   }
 });
 

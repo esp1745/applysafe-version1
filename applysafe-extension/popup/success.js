@@ -4,6 +4,12 @@
 (async function() {
   // Show loading spinner or message
   const statusEl = document.getElementById('status');
+  const closeBtn = document.getElementById('closeSuccessBtn');
+
+  closeBtn?.addEventListener('click', () => {
+    window.close();
+  });
+
   if (statusEl) statusEl.textContent = 'Finalizing your subscription...';
 
   // Force subscription sync

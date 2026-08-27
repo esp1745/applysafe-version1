@@ -16,6 +16,121 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.get('/', (req, res) => {
+  res.type('html').send(`
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>ApplySafe Backend</title>
+        <style>
+          :root {
+            color-scheme: light;
+            --bg: #f4f8ff;
+            --card: rgba(255, 255, 255, 0.92);
+            --text: #10224f;
+            --muted: #5f7196;
+            --border: rgba(16, 34, 79, 0.12);
+            --accent: #16d7c0;
+            --accent-dark: #0f2f78;
+          }
+          * { box-sizing: border-box; }
+          body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+            background:
+              radial-gradient(circle at top left, rgba(79, 156, 255, 0.25), transparent 38%),
+              radial-gradient(circle at right center, rgba(22, 215, 192, 0.22), transparent 32%),
+              linear-gradient(180deg, #eef5ff 0%, var(--bg) 100%);
+            color: var(--text);
+          }
+          .card {
+            width: min(720px, 100%);
+            padding: 32px;
+            border-radius: 28px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            box-shadow: 0 24px 80px rgba(15, 47, 120, 0.12);
+          }
+          .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: rgba(22, 215, 192, 0.12);
+            color: var(--accent-dark);
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+          }
+          .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            background: var(--accent);
+          }
+          h1 {
+            margin: 18px 0 12px;
+            font-size: clamp(32px, 5vw, 48px);
+            line-height: 1;
+          }
+          p {
+            margin: 0;
+            font-size: 16px;
+            line-height: 1.6;
+            color: var(--muted);
+          }
+          .links {
+            margin-top: 26px;
+            display: grid;
+            gap: 12px;
+          }
+          a {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 16px;
+            border-radius: 16px;
+            text-decoration: none;
+            color: var(--accent-dark);
+            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid rgba(16, 34, 79, 0.1);
+            font-weight: 600;
+          }
+          a span {
+            color: var(--muted);
+            font-size: 14px;
+            font-weight: 500;
+          }
+        </style>
+      </head>
+      <body>
+        <main class="card">
+          <div class="eyebrow"><span class="dot"></span>ApplySafe Backend</div>
+          <h1>Backend is running</h1>
+          <p>
+            This Vercel deployment powers the Chrome extension API for auth, analysis,
+            subscriptions, and diagnostics.
+          </p>
+          <div class="links">
+            <a href="/api/health">Health status <span>/api/health</span></a>
+            <a href="/api/ai-status">AI status <span>/api/ai-status</span></a>
+            <a href="/success">Checkout success page <span>/success</span></a>
+            <a href="/cancel">Checkout cancel page <span>/cancel</span></a>
+          </div>
+        </main>
+      </body>
+    </html>
+  `);
+});
+
 // Initialize Stripe AFTER environment variables are loaded
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
@@ -33,6 +148,22 @@ const anthropic = process.env.ANTHROPIC_API_KEY
 // Connect to Postgres (Supabase)
 let dbReady = false;
 
+function getDatabaseTroubleshootingHint(error) {
+  const message = error?.message || '';
+
+  if (/tenant\/user .* not found/i.test(message) || /tenant or user not found/i.test(message)) {
+    return [
+      'Supabase pooler rejected the tenant/user.',
+      'Re-copy the exact connection string from Supabase Dashboard > Connect.',
+      'For pooler URLs, the username must be in the form postgres.[project-ref].',
+      'If your database password contains special characters, URL-encode it or reset it to a simpler password before rebuilding the URI.',
+      'If the exact dashboard string still fails on both ports 5432 and 6543, restart the Supabase project and check Supabase support for a stuck pooler tenant.'
+    ].join(' ');
+  }
+
+  return '';
+}
+
 async function connectToDatabase() {
   if (dbReady) {
     return sequelize;
@@ -46,6 +177,10 @@ async function connectToDatabase() {
     return sequelize;
   } catch (err) {
     console.error(' Postgres connection error:', err.message);
+    const dbHint = getDatabaseTroubleshootingHint(err);
+    if (dbHint) {
+      console.error(' Supabase hint:', dbHint);
+    }
     dbReady = false;
     throw err;
   }

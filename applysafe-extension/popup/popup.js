@@ -5,6 +5,25 @@
 
 // DOM Elements
 const elements = {
+  // Auth
+  anonymousUser: document.getElementById('anonymousUser'),
+  signedInUser: document.getElementById('signedInUser'),
+  emailInput: document.getElementById('emailInput'),
+  emailSignInBtn: document.getElementById('emailSignInBtn'),
+  googleSignInBtn: document.getElementById('googleSignInBtn'),
+  userAvatar: document.getElementById('userAvatar'),
+  userName: document.getElementById('userName'),
+  userEmail: document.getElementById('userEmail'),
+  signOutBtn: document.getElementById('signOutBtn'),
+  upgradeBtn: document.getElementById('upgradeBtn'),
+  subscriptionBanner: document.getElementById('subscriptionBanner'),
+  bannerIcon: document.getElementById('bannerIcon'),
+  bannerTitle: document.getElementById('bannerTitle'),
+  bannerMessage: document.getElementById('bannerMessage'),
+  scamsBlocked: document.getElementById('scamsBlocked'),
+  jobsScanned: document.getElementById('jobsScanned'),
+  safetyScore: document.getElementById('safetyScore'),
+
   // States
   loadingState: document.getElementById('loadingState'),
   noJobState: document.getElementById('noJobState'),
@@ -62,9 +81,88 @@ const elements = {
   toast: document.getElementById('toast')
 };
 
+const GOOGLE_SIGN_IN_HTML = `
+  <svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+    <path fill="none" d="M0 0h48v48H0z"/>
+  </svg>
+  Continue with Google
+`;
+
+const EMAIL_SIGN_IN_LABEL = 'Continue with Email';
+
 // State
 let currentAnalysis = null;
 let currentTabUrl = null;
+
+async function ensureContentScriptReady(tab) {
+  if (!tab?.id || !tab.url || !isJobSite(tab.url)) {
+    return false;
+  }
+
+  try {
+    const ping = await chrome.tabs.sendMessage(tab.id, { action: 'ping' });
+    if (ping?.alive) {
+      return true;
+    }
+  } catch (error) {
+    console.log('Content script ping failed, trying to inject it:', error?.message || error);
+  }
+
+  if (!chrome.scripting?.executeScript) {
+    return false;
+  }
+
+  try {
+    await chrome.scripting.insertCSS({
+      target: { tabId: tab.id },
+      files: ['content/content.css']
+    }).catch(() => {});
+
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['content/content.js']
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 350));
+    return true;
+  } catch (error) {
+    console.error('Could not inject content script into active tab:', error);
+    return false;
+  }
+}
+
+function getSubscriptionUi() {
+  const ui = {
+    subscriptionBanner: elements.subscriptionBanner || document.getElementById('subscriptionBanner'),
+    bannerIcon: elements.bannerIcon || document.getElementById('bannerIcon'),
+    bannerTitle: elements.bannerTitle || document.getElementById('bannerTitle'),
+    bannerMessage: elements.bannerMessage || document.getElementById('bannerMessage')
+  };
+
+  Object.assign(elements, ui);
+  return ui;
+}
+
+function showDefaultTrialBanner(ui, daysLeft = 7, scansLeft = 10) {
+  if (!ui.subscriptionBanner || !ui.bannerTitle || !ui.bannerMessage) {
+    console.warn('Subscription banner UI is unavailable');
+    return;
+  }
+
+  const plural = daysLeft === 1 ? 'day' : 'days';
+  ui.subscriptionBanner.className = 'subscription-banner trial';
+  ui.subscriptionBanner.removeAttribute('aria-hidden');
+  ui.bannerTitle.textContent = 'Free Trial';
+  ui.bannerMessage.textContent = `${daysLeft} ${plural} left • ${scansLeft} scans remaining today`;
+
+  if (ui.bannerIcon) {
+    ui.bannerIcon.textContent = '';
+  }
+}
 
 // Initialize popup
 document.addEventListener('DOMContentLoaded', async () => {
@@ -151,31 +249,31 @@ function toggleTheme() {
 
 // Setup event listeners
 function setupEventListeners() {
-  elements.emailSignInBtn.addEventListener('click', () => {
+  elements.emailSignInBtn?.addEventListener('click', () => {
     console.log('📧 Email Sign In button clicked');
     handleEmailSignIn();
   });
   
-  elements.emailInput.addEventListener('keypress', (e) => {
+  elements.emailInput?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') handleEmailSignIn();
   });
   
-  elements.googleSignInBtn.addEventListener('click', () => {
+  elements.googleSignInBtn?.addEventListener('click', () => {
     console.log('🔘 Sign In button clicked');
     handleGoogleSignIn();
   });
-  elements.signOutBtn.addEventListener('click', () => {
+  elements.signOutBtn?.addEventListener('click', () => {
     console.log('🔘 Sign Out button clicked');
     handleSignOut();
   });
-  elements.upgradeBtn.addEventListener('click', handleUpgrade);
-  elements.refreshAnalysis.addEventListener('click', handleRefresh);
-  elements.checkUrlBtn.addEventListener('click', handleUrlCheck);
-  elements.urlInput.addEventListener('keypress', (e) => {
+  elements.upgradeBtn?.addEventListener('click', handleUpgrade);
+  elements.refreshAnalysis?.addEventListener('click', handleRefresh);
+  elements.checkUrlBtn?.addEventListener('click', handleUrlCheck);
+  elements.urlInput?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') handleUrlCheck();
   });
-  elements.reportBtn.addEventListener('click', handleReport);
-  elements.whitelistBtn.addEventListener('click', handleWhitelist);
+  elements.reportBtn?.addEventListener('click', handleReport);
+  elements.whitelistBtn?.addEventListener('click', handleWhitelist);
   
   // Theme toggle
   if (elements.toggleTheme) {
@@ -195,7 +293,7 @@ function setupEventListeners() {
       showToast('Subscription status refreshed! Check console for details.', 'success');
     });
   }
-  elements.openSettings.addEventListener('click', openSettings);
+  elements.openSettings?.addEventListener('click', openSettings);
 }
 
 // Load authentication status
@@ -262,13 +360,13 @@ async function handleEmailSignIn() {
     } else {
       alert(`Sign-in failed: ${response?.error || 'Unknown error'}`);
       elements.emailSignInBtn.disabled = false;
-      elements.emailSignInBtn.textContent = 'Sign In';
+      elements.emailSignInBtn.textContent = EMAIL_SIGN_IN_LABEL;
     }
   } catch (error) {
     console.error('❌ Email sign-in error:', error);
     alert('Sign-in failed: ' + error.message);
     elements.emailSignInBtn.disabled = false;
-    elements.emailSignInBtn.textContent = 'Sign In';
+    elements.emailSignInBtn.textContent = EMAIL_SIGN_IN_LABEL;
   }
 }
 
@@ -289,7 +387,7 @@ async function handleGoogleSignIn() {
       console.error('❌ Message sending failed:', msgError.message);
       // Reset button
       elements.googleSignInBtn.disabled = false;
-      elements.googleSignInBtn.innerHTML = `<svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Sign in with Google`;
+      elements.googleSignInBtn.innerHTML = GOOGLE_SIGN_IN_HTML;
       showError('Sign in failed: ' + msgError.message);
       throw msgError;
     }
@@ -305,22 +403,18 @@ async function handleGoogleSignIn() {
     } else {
       const errorMsg = response?.error || 'Failed to sign in';
       console.error('❌ Sign in failed:', errorMsg);
+      if (/redirect_uri_mismatch|misconfigured for this extension id/i.test(errorMsg)) {
+        alert(errorMsg);
+      }
       showError(errorMsg);
       elements.googleSignInBtn.disabled = false;
-      elements.googleSignInBtn.innerHTML = `
-        <svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
-          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-        </svg>
-        Sign in with Google
-      `;
+      elements.googleSignInBtn.innerHTML = GOOGLE_SIGN_IN_HTML;
     }
   } catch (error) {
     console.error('Sign in error:', error);
     showError('Failed to sign in');
     elements.googleSignInBtn.disabled = false;
+    elements.googleSignInBtn.innerHTML = GOOGLE_SIGN_IN_HTML;
   }
 }
 
@@ -348,6 +442,13 @@ async function handleSignOut() {
 // Load subscription status
 async function loadSubscriptionStatus() {
   console.log('loadSubscriptionStatus called');
+  const ui = getSubscriptionUi();
+
+  if (!ui.subscriptionBanner || !ui.bannerTitle || !ui.bannerMessage) {
+    console.warn('Skipping subscription render because banner elements are missing');
+    return;
+  }
+
   try {
     console.log('Sending getTrialInfo message...');
     const response = await chrome.runtime.sendMessage({ action: 'getTrialInfo' });
@@ -360,45 +461,39 @@ async function loadSubscriptionStatus() {
       // Hide banner only if user is paid/active
       if (info.isPaid) {
         console.log('User is paid, hiding banner');
-        elements.subscriptionBanner.style.display = 'none';
+        ui.subscriptionBanner.className = 'subscription-banner trial is-hidden';
+        ui.subscriptionBanner.setAttribute('aria-hidden', 'true');
         return;
       }
       
       // Show banner for trial or expired users
       console.log('Showing banner for trial/expired user');
-      elements.subscriptionBanner.style.display = 'flex';
+      ui.subscriptionBanner.removeAttribute('aria-hidden');
       
       if (info.isExpired) {
-        elements.subscriptionBanner.className = 'subscription-banner expired';
-        elements.bannerTitle.textContent = 'Trial Expired';
-        elements.bannerMessage.textContent = 'Upgrade to continue using ApplySafe';
-        if (elements.bannerIcon) elements.bannerIcon.textContent = '🔒';
+        ui.subscriptionBanner.className = 'subscription-banner expired';
+        ui.bannerTitle.textContent = 'Trial Expired';
+        ui.bannerMessage.textContent = 'Upgrade to continue using ApplySafe';
+        if (ui.bannerIcon) ui.bannerIcon.textContent = '';
       } else {
         // Default to trial (including new users)
-        elements.subscriptionBanner.className = 'subscription-banner trial';
-        elements.bannerTitle.textContent = 'Free Trial';
+        ui.subscriptionBanner.className = 'subscription-banner trial';
+        ui.bannerTitle.textContent = 'Free Trial';
         const daysLeft = info.daysLeft || 7;
         const scansLeft = info.scansLeft !== undefined ? info.scansLeft : 10;
         const plural = daysLeft === 1 ? 'day' : 'days';
-        elements.bannerMessage.textContent = `${daysLeft} ${plural} left • ${scansLeft} scans remaining today`;
-        if (elements.bannerIcon) elements.bannerIcon.textContent = '⏰';
+        ui.bannerMessage.textContent = `${daysLeft} ${plural} left • ${scansLeft} scans remaining today`;
+        if (ui.bannerIcon) ui.bannerIcon.textContent = '';
       }
     } else {
       // No response - show default trial banner
       console.log('No trial info, showing default banner');
-      elements.subscriptionBanner.style.display = 'flex';
-      elements.subscriptionBanner.className = 'subscription-banner trial';
-      elements.bannerTitle.textContent = 'Free Trial';
-      elements.bannerMessage.textContent = '7 days left • 10 scans remaining today';
-      if (elements.bannerIcon) elements.bannerIcon.textContent = '⏰';
+      showDefaultTrialBanner(ui);
     }
   } catch (error) {
     console.error('Error loading subscription:', error);
     // On error, show default trial banner
-    elements.subscriptionBanner.style.display = 'flex';
-    elements.subscriptionBanner.className = 'subscription-banner trial';
-    elements.bannerTitle.textContent = 'Free Trial';
-    elements.bannerMessage.textContent = '7 days left • 10 scans remaining today';
+    showDefaultTrialBanner(ui);
   }
 }
 
@@ -432,7 +527,7 @@ async function loadStats() {
     
     if (response && response.stats) {
       const stats = response.stats;
-      elements.scamsBlocked.textContent = stats.scamsCaught === 0 ? '✓' : stats.scamsCaught;
+      elements.scamsBlocked.textContent = String(stats.scamsCaught || 0);
       elements.jobsScanned.textContent = stats.totalJobs;
       
       // Calculate safety rate
@@ -502,6 +597,11 @@ async function analyzeCurrentPage() {
   try {
     // Get current tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id || !tab.url) {
+      console.log('No active tab URL available for analysis');
+      showNoJobState();
+      return;
+    }
     currentTabUrl = tab.url;
     
     console.log('📍 Current tab URL:', tab.url);
@@ -513,6 +613,8 @@ async function analyzeCurrentPage() {
       showNoJobState();
       return;
     }
+
+    await ensureContentScriptReady(tab);
     
     // Clear caches first to ensure fresh analysis
     await clearCachedAnalysis(tab.url);
@@ -704,13 +806,13 @@ function displayAnalysis(analysis) {
     const v = analysis.companyVerification;
     
     if (v.jobFoundOnCareerSite) {
-      positiveItems.push('✓✓✓ Job verified on company\'s official career site');
+      positiveItems.push('Job verified on the company\'s official career site');
     }
     if (v.websiteAccessible && v.verifiedUrl) {
-      positiveItems.push(`✓ Company website verified: ${v.verifiedUrl}`);
+      positiveItems.push(`Company website verified: ${v.verifiedUrl}`);
     }
     if (v.hasCareerPage && !v.jobFoundOnCareerSite) {
-      positiveItems.push('✓ Company has active career/jobs page');
+      positiveItems.push('Company has an active careers page');
     }
     
     // Show H1B info in console for debugging
@@ -775,7 +877,7 @@ function updateH1BSection(analysis) {
     if (h1bData.sponsors) {
       // Company sponsors H-1B visas
       h1bStatus.classList.add('sponsors');
-      h1bIcon.textContent = '✅';
+      h1bIcon.textContent = '';
       h1bText.innerHTML = `<strong>Verified H-1B Sponsor</strong><br>${h1bData.note || `${companyName} has sponsored H-1B visas`}`;
       
       // Show sponsorship history if available
@@ -783,7 +885,7 @@ function updateH1BSection(analysis) {
     } else {
       // Company checked but no records found
       h1bStatus.classList.add('no-records');
-      h1bIcon.textContent = '⚠️';
+      h1bIcon.textContent = '';
       h1bText.innerHTML = `<strong>No H-1B Records</strong><br>${h1bData.note || 'No H-1B sponsorship records found for this company'}`;
     }
     
@@ -792,7 +894,7 @@ function updateH1BSection(analysis) {
   } else {
     // H1B check was not performed or failed
     h1bStatus.classList.add('checking');
-    h1bIcon.textContent = '🔍';
+    h1bIcon.textContent = '';
     h1bText.innerHTML = `<strong>H-1B Status Unknown</strong><br>Could not verify H-1B sponsorship history for ${companyName}`;
     
     // Hide feedback when status is unknown
@@ -936,9 +1038,9 @@ function updateRiskColors(riskClass, riskScore) {
 // Update verdict badge
 function updateVerdict(riskScore, riskClass) {
   const verdicts = {
-    safe: { text: 'Looks Safe', icon: '✓' },
-    warning: { text: 'Review Carefully', icon: '⚠️' },
-    danger: { text: 'High Risk', icon: '🚨' }
+    safe: { text: 'Looks Safe' },
+    warning: { text: 'Review Carefully' },
+    danger: { text: 'High Risk' }
   };
   
   const verdict = verdicts[riskClass];
@@ -1251,6 +1353,10 @@ function showToast(message, type = 'info') {
 
 // Utility functions
 function isJobSite(url) {
+  if (!url || typeof url !== 'string') {
+    return false;
+  }
+
   const lowerUrl = url.toLowerCase();
   
   // LinkedIn - be specific about job pages (not profiles, feed, etc.)

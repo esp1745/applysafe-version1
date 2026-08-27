@@ -100,6 +100,13 @@ function setupEventListeners() {
   elements.whitelistInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') addToWhitelist();
   });
+  elements.whitelistList.addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('[data-action="remove-whitelist"]');
+    if (!removeBtn) return;
+
+    const domain = decodeURIComponent(removeBtn.dataset.domain || '');
+    removeFromWhitelist(domain);
+  });
   
   // Settings
   elements.autoAnalyze.addEventListener('change', saveSettings);
@@ -338,7 +345,7 @@ function renderWhitelistList(whitelist) {
   elements.whitelistList.innerHTML = whitelist.map(domain => `
     <div class="whitelist-item" data-domain="${escapeHtml(domain)}">
       <span>${escapeHtml(domain)}</span>
-      <button onclick="removeFromWhitelist('${escapeHtml(domain)}')" title="Remove">
+      <button data-action="remove-whitelist" data-domain="${encodeURIComponent(String(domain))}" title="Remove">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -382,8 +389,7 @@ async function addToWhitelist() {
   }
 }
 
-// Global function for whitelist removal
-window.removeFromWhitelist = async function(domain) {
+async function removeFromWhitelist(domain) {
   try {
     const result = await chrome.storage.local.get(['whitelist']);
     const whitelist = (result.whitelist || []).filter(d => d !== domain);
@@ -393,7 +399,7 @@ window.removeFromWhitelist = async function(domain) {
   } catch (error) {
     showToast('Failed to remove from whitelist', 'error');
   }
-};
+}
 
 // Settings
 async function saveSettings() {

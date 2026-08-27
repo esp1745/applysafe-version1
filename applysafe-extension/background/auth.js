@@ -1,11 +1,18 @@
 // Google OAuth Authentication for ApplySafe
 // Handles user sign-in with Google account
 
+const MANIFEST_OAUTH = chrome.runtime.getManifest().oauth2 || {};
+
 const AUTH_CONFIG = {
-  CLIENT_ID: '683690946308-jfqmi19s9pgtk5fcaq8l3cpfg39o3cih.apps.googleusercontent.com',
-  REDIRECT_URI: 'https://' + chrome.runtime.id + '.chromiumapp.org/',
-  SCOPES: 'profile email',
-  API_ENDPOINT: 'http://localhost:3000/api'  // Use localhost for testing
+  CLIENT_ID: MANIFEST_OAUTH.client_id || '',
+  REDIRECT_URI: chrome.identity.getRedirectURL(),
+  SCOPES: Array.isArray(MANIFEST_OAUTH.scopes) && MANIFEST_OAUTH.scopes.length
+    ? MANIFEST_OAUTH.scopes.join(' ')
+    : 'profile email',
+  SCOPE_LIST: Array.isArray(MANIFEST_OAUTH.scopes) && MANIFEST_OAUTH.scopes.length
+    ? MANIFEST_OAUTH.scopes
+    : ['profile', 'email'],
+  API_ENDPOINT: 'https://applysafe-version1.vercel.app/api'
 };
 
 // Helper to check if a token looks like a JWT (has 3 parts separated by dots)
@@ -13,6 +20,50 @@ function isValidJWTFormat(token) {
   if (!token || typeof token !== 'string') return false;
   const parts = token.split('.');
   return parts.length === 3;
+}
+
+function isRedirectMismatchError(message = '') {
+  return /redirect_uri_mismatch/i.test(message);
+}
+
+function buildOAuthConfigurationError(rawMessage = '') {
+  const details = [
+    `Google sign-in is misconfigured for this extension ID: ${chrome.runtime.id}.`,
+    'Create or update a Google OAuth client of type Chrome Extension for this exact extension ID, then use that client ID in manifest.json.',
+    `Expected redirect: ${AUTH_CONFIG.REDIRECT_URI}.`
+  ];
+
+  if (rawMessage) {
+    details.push(`Google error: ${rawMessage}`);
+  }
+
+  return details.join(' ');
+}
+
+async function requestGoogleAccessToken(interactive = false) {
+  const result = await chrome.identity.getAuthToken({
+    interactive,
+    scopes: AUTH_CONFIG.SCOPE_LIST
+  });
+  const token = typeof result === 'string' ? result : result?.token;
+
+  if (!token) {
+    throw new Error('No Google token returned');
+  }
+
+  return token;
+}
+
+async function fetchGoogleUserInfo(token) {
+  const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  if (!userInfoRes.ok) {
+    throw new Error(`Google user info request failed with status ${userInfoRes.status}`);
+  }
+
+  return userInfoRes.json();
 }
 
 // Get current user authentication status
@@ -68,42 +119,27 @@ async function refreshToken() {
     
     // First, try to get token non-interactively
     try {
-      googleToken = await new Promise((resolve, reject) => {
-        chrome.identity.getAuthToken({ interactive: false }, (token) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-          } else {
-            resolve(token);
-          }
-        });
-      });
+      googleToken = await requestGoogleAccessToken(false);
     } catch (e) {
       console.log('⚠️ AUTH: Non-interactive auth failed:', e.message);
       
       // Try to clear the cached token and get a new one
       try {
         // Remove any cached token first
-        await new Promise((resolve) => {
-          chrome.identity.clearAllCachedAuthTokens(() => {
-            console.log('🧹 AUTH: Cleared cached auth tokens');
-            resolve();
-          });
-        });
+        await chrome.identity.clearAllCachedAuthTokens();
+        console.log('🧹 AUTH: Cleared cached auth tokens');
         
         // Now try again with interactive mode (will show Google popup if needed)
-        googleToken = await new Promise((resolve, reject) => {
-          chrome.identity.getAuthToken({ interactive: true }, (token) => {
-            if (chrome.runtime.lastError) {
-              reject(new Error(chrome.runtime.lastError.message));
-            } else {
-              resolve(token);
-            }
-          });
-        });
+        googleToken = await requestGoogleAccessToken(true);
         console.log('✅ AUTH: Got token with interactive mode');
       } catch (e2) {
         console.log('❌ AUTH: Interactive auth also failed:', e2.message);
-        return { success: false, error: 'Need to sign in again' };
+        return {
+          success: false,
+          error: isRedirectMismatchError(e2.message)
+            ? buildOAuthConfigurationError(e2.message)
+            : 'Need to sign in again'
+        };
       }
     }
     
@@ -156,45 +192,35 @@ async function signInWithGoogle() {
   console.log('🚀 AUTH: signInWithGoogle() starting...');
   
   try {
-    // Build OAuth URL
-    const authUrl = new URL('https://accounts.google.com/o/oauth2/auth');
-    authUrl.searchParams.set('client_id', AUTH_CONFIG.CLIENT_ID);
-    authUrl.searchParams.set('response_type', 'token');
-    authUrl.searchParams.set('redirect_uri', AUTH_CONFIG.REDIRECT_URI);
-    authUrl.searchParams.set('scope', AUTH_CONFIG.SCOPES);
-
-    console.log('🔐 AUTH: Launching OAuth flow with redirect:', AUTH_CONFIG.REDIRECT_URI);
+    if (!AUTH_CONFIG.CLIENT_ID) {
+      return {
+        success: false,
+        error: 'Google OAuth client ID is missing from manifest.json.'
+      };
+    }
     
-    // Launch OAuth flow
-    let redirectUrl;
+    console.log('🔐 AUTH: Using manifest OAuth client:', AUTH_CONFIG.CLIENT_ID);
+    console.log('🔐 AUTH: Expected redirect URL:', AUTH_CONFIG.REDIRECT_URI);
+    console.log('🔐 AUTH: Current extension ID:', chrome.runtime.id);
+
+    let token;
     try {
-      redirectUrl = await chrome.identity.launchWebAuthFlow({
-        url: authUrl.href,
-        interactive: true
-      });
-      console.log('✅ AUTH: OAuth flow returned URL');
+      token = await requestGoogleAccessToken(true);
+      console.log('✅ AUTH: Got access token from chrome.identity.getAuthToken');
     } catch (oauthError) {
-      console.error('❌ AUTH: OAuth flow failed:', oauthError);
-      return { success: false, error: 'OAuth flow failed: ' + oauthError.message };
+      console.error('❌ AUTH: getAuthToken failed:', oauthError);
+      return {
+        success: false,
+        error: isRedirectMismatchError(oauthError.message)
+          ? buildOAuthConfigurationError(oauthError.message)
+          : 'Google sign-in failed: ' + oauthError.message
+      };
     }
-
-    // Extract access token from redirect URL
-    const params = new URLSearchParams(redirectUrl.split('#')[1]);
-    const token = params.get('access_token');
-    
-    if (!token) {
-      console.error('❌ AUTH: No access token in redirect URL');
-      return { success: false, error: 'Failed to get auth token' };
-    }
-    console.log('✅ AUTH: Got access token, length:', token.length);
 
     // Get user info from Google
     let userInfo;
     try {
-      const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      userInfo = await userInfoRes.json();
+      userInfo = await fetchGoogleUserInfo(token);
       console.log('✅ AUTH: Got user info:', userInfo.email, userInfo.name);
     } catch (userInfoError) {
       console.error('❌ AUTH: Failed to get user info:', userInfoError);
@@ -318,7 +344,7 @@ async function signOut() {
   try {
     // Try to remove Google token, but ignore errors
     try {
-      const token = await chrome.identity.getAuthToken({ interactive: false });
+      const token = await requestGoogleAccessToken(false);
       if (token) {
         await chrome.identity.removeCachedAuthToken({ token });
       }
@@ -326,7 +352,13 @@ async function signOut() {
       console.warn('Token removal failed or not needed:', tokenError.message);
     }
     // Clear local storage including subscription
-    await chrome.storage.local.remove(['user', 'authToken', 'subscriptionStatus', 'subscription']);
+    await chrome.storage.local.remove([
+      'user',
+      'authToken',
+      'googleAccessToken',
+      'subscriptionStatus',
+      'subscription'
+    ]);
     console.log('User signed out (local storage cleared)');
     return { success: true };
   } catch (error) {
@@ -337,6 +369,10 @@ async function signOut() {
 
 // Check if user can use a feature (with server-side verification)
 async function canUseFeature(featureName = 'scan') {
+  // Stripe/paywall disabled for now - unlimited access for all users.
+  // Remove this early return to re-enable trial/scan-limit gating below.
+  return { allowed: true, reason: 'paywall_disabled', scansLeft: Infinity, usage: { scansToday: 0 } };
+
   try {
     const authStatus = await getAuthStatus();
     const trialInfo = await getLocalTrialInfo();
@@ -510,4 +546,3 @@ if (typeof self !== 'undefined') {
     refreshToken
   };
 }
-

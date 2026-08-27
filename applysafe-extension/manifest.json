@@ -1,26 +1,34 @@
 {
   "manifest_version": 3,
-  "name": "ApplySafe - AI Job Scam Detector",
+  "name": "ApplySafe - Job Scam Detector",
   "version": "3.0.0",
-  "description": "AI-powered job scam detection. Protect yourself from fraudulent job postings with instant analysis on LinkedIn, Indeed, and more.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0Z4oNfaIq3lCZJjXrThScDEYxAqoxUhD4JXw+Ze+ZbOrIQqlqN2BxyJ9beLPeGr3xVd14HerBpgEu1ki4MzOb0EBfxa+v1Dxt7N1VkkEfRWYEBwn9YMwoP/pUuo4PtLLFwr3cyqkOsRGON3t9W9lz0zarV92G5udSP19ewdvGWUZrE8vmDnyexxPPX0xn5SmMrVUOq8k+Y+F2tJGnBKSFGYqa41wNGNdssAH+HSyBaTg8V5kMLmMiWZCffBofOmZmuOTdr68pluwgnmys6+TEnCCRTKVdHWilQ9KfvKa/9MrLU0Wpgu64tXNw5wtuO2iexs2cCOhcUxE7RZYsmviGQIDAQAB",
+  "description": "Job scam detection for LinkedIn, Indeed, and more. Review suspicious listings with fast, clear signals before you apply.",
   "icons": {
     "16": "icons/icon16.png",
+    "19": "icons/icon19.png",
+    "24": "icons/icon24.png",
     "32": "icons/icon32.png",
+    "38": "icons/icon38.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
   "action": {
     "default_icon": {
       "16": "icons/icon16.png",
+      "19": "icons/icon19.png",
+      "24": "icons/icon24.png",
       "32": "icons/icon32.png",
+      "38": "icons/icon38.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "ApplySafe - Analyzing job postings in real-time",
+    "default_title": "ApplySafe - Review job posting signals",
     "default_popup": "popup/popup.html"
   },
   "permissions": [
     "storage",
+    "scripting",
     "activeTab",
     "tabs",
     "alarms",
@@ -29,7 +37,7 @@
     "identity"
   ],
   "oauth2": {
-    "client_id": "683690946308-jfqmi19s9pgtk5fcaq8l3cpfg39o3cih.apps.googleusercontent.com",
+    "client_id": "595499212327-3ii1pt2tfavmart3i9i0d378q9ui6ccp.apps.googleusercontent.com",
     "scopes": [
       "profile",
       "email"

@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ApplySafe Dashboard - Track Your Job Search</title>
   <link rel="stylesheet" href="dashboard.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
   <div id="app" class="app">
@@ -13,19 +12,9 @@
     <aside class="sidebar">
       <div class="sidebar-header">
         <div class="logo">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2L3 7V12C3 16.97 7.02 21.5 12 22.5C16.98 21.5 21 16.97 21 12V7L12 2Z" fill="url(#shield-gradient)"/>
-            <path d="M10 15.5L7.5 13L8.91 11.59L10 12.67L14.59 8.09L16 9.5L10 15.5Z" fill="white"/>
-            <defs>
-              <linearGradient id="shield-gradient" x1="3" y1="2" x2="21" y2="22">
-                <stop stop-color="#10B981"/>
-                <stop offset="1" stop-color="#059669"/>
-              </linearGradient>
-            </defs>
-          </svg>
-          <span>ApplySafe</span>
+          <img class="brand-mark" src="../icons/applysafe-logo-horizontal.png" alt="ApplySafe">
         </div>
-        <span class="version-badge">v3.0</span>
+        <span class="version-badge">Extension</span>
       </div>
 
       <nav class="sidebar-nav">
@@ -57,7 +46,7 @@
             <path d="M12 2a10 10 0 1 0 10 10H12V2z"/>
             <path d="M20.8 10A10 10 0 0 0 14 3.2V10z"/>
           </svg>
-          <span>AI Tools</span>
+          <span>Career Tools</span>
           <span class="pro-badge">PRO</span>
         </a>
 
@@ -103,7 +92,7 @@
       <header class="main-header">
         <div class="header-left">
           <h1 id="pageTitle">Overview</h1>
-          <p id="pageDescription">Track your job search progress</p>
+          <p id="pageDescription">Review risky listings and trusted employers</p>
         </div>
         <div class="header-right">
           <button class="btn btn-secondary" id="refreshDataBtn" title="Refresh data">
@@ -132,37 +121,37 @@
           <div class="analytics-grid">
             <!-- Key Metrics -->
             <div class="analytics-card">
-              <h3>Scam Detection Rate</h3>
+              <h3>Risk Rate</h3>
               <div class="metric-display">
                 <span class="metric-value" id="scamDetectionRate">0%</span>
               </div>
-              <p class="metric-description">Percentage of jobs identified as scams</p>
+              <p class="metric-description">Share of reviewed listings that looked suspicious</p>
             </div>
             <div class="analytics-card">
-              <h3>Jobs Scanned</h3>
+              <h3>Listings Reviewed</h3>
               <div class="metric-display">
                 <span class="metric-value" id="totalJobsScanned">0</span>
               </div>
-              <p class="metric-description">Total job postings analyzed</p>
+              <p class="metric-description">Total openings checked by the extension</p>
             </div>
             <div class="analytics-card">
-              <h3>Scams Blocked</h3>
+              <h3>High-Risk Caught</h3>
               <div class="metric-display">
                 <span class="metric-value danger" id="scamsBlocked">0</span>
               </div>
-              <p class="metric-description">Fraudulent postings detected</p>
+              <p class="metric-description">Listings worth treating carefully</p>
             </div>
             <div class="analytics-card">
-              <h3>Safe Jobs Found</h3>
+              <h3>Lower-Risk Found</h3>
               <div class="metric-display">
                 <span class="metric-value safe" id="safeJobsCount">0</span>
               </div>
-              <p class="metric-description">Legitimate opportunities identified</p>
+              <p class="metric-description">Listings with stronger trust signals</p>
             </div>
 
             <!-- Top Job Sources -->
             <div class="analytics-card full-width">
-              <h3>Top Job Sources</h3>
+              <h3>Where You Review Most</h3>
               <div class="source-list" id="topSources">
                 <div class="source-item">
                   <span>LinkedIn</span>
@@ -184,7 +173,7 @@
 
             <!-- Scan Activity -->
             <div class="analytics-card full-width">
-              <h3>Daily Scan Activity</h3>
+              <h3>Daily Review Activity</h3>
               <div class="activity-chart" id="activityChart">
                 <svg viewBox="0 0 280 120" preserveAspectRatio="xMidYMid meet">
                   <g id="bars"></g>
@@ -258,12 +247,12 @@
             <h3>Ask AI Assistant</h3>
             <div class="chat-container" id="chatContainer">
               <div class="chat-messages" id="chatMessages">
-                <div class="message assistant">
-                  <p>Hi! I'm your AI job search assistant. How can I help you today? I can help with cover letters, interview prep, resume tips, and more.</p>
-                </div>
+              <div class="message assistant">
+                  <p>Use this workspace for practical job-search help, from cover-letter drafts to interview prep and clearer listing reviews.</p>
+              </div>
               </div>
               <div class="chat-input">
-                <input type="text" id="chatInput" placeholder="Ask me anything about your job search...">
+                <input type="text" id="chatInput" placeholder="Ask about resumes, interviews, or suspicious listings...">
                 <button class="btn btn-primary" id="sendChat">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="22" y1="2" x2="11" y2="13"/>
@@ -281,8 +270,8 @@
         <!-- Scan History Tab -->
         <section id="scan-history-tab" class="tab-pane">
           <div class="section-header" style="margin-bottom: 20px;">
-            <h2>Analyzed Job Postings</h2>
-            <p style="margin-top: 5px; color: var(--text-secondary);">Review all jobs you've scanned and their risk assessments</p>
+            <h2>Reviewed Listings</h2>
+            <p style="margin-top: 5px; color: var(--text-secondary);">Look back through saved checks and compare the risk patterns.</p>
           </div>
           
           <div class="filters-bar">
@@ -319,13 +308,16 @@
         <section id="whitelist-tab" class="tab-pane">
           <div class="whitelist-header">
             <p>Companies you've marked as trusted won't trigger warnings.</p>
-            <button class="btn btn-primary" id="addToWhitelistBtn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-              Add Company
-            </button>
+            <div class="whitelist-controls">
+              <input type="text" id="whitelistInput" placeholder="Enter company domain, like company.com">
+              <button class="btn btn-primary" id="addWhitelistBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"/>
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                Add Company
+              </button>
+            </div>
           </div>
           
           <div class="whitelist-grid" id="whitelistGrid">
@@ -334,8 +326,8 @@
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                 <polyline points="22 4 12 14.01 9 11.01"/>
               </svg>
-              <p>No whitelisted companies</p>
-              <span>Add trusted companies to skip safety checks</span>
+              <p>No trusted companies yet</p>
+              <span>Add employers you trust so they do not trigger repeat warnings</span>
             </div>
           </div>
         </section>
@@ -351,7 +343,7 @@
                 <div class="setting-row" id="signInRow" style="display: none;">
                   <div class="setting-info">
                     <span class="setting-label">Sign In</span>
-                    <span class="setting-description">Sign in with Google to use AI features</span>
+                    <span class="setting-description">Sign in with Google for sync, premium tools, and account access</span>
                   </div>
                   <button class="btn btn-primary" id="signInBtn">
                     <svg viewBox="0 0 24 24" width="16" height="16" style="margin-right: 8px;">
@@ -360,7 +352,7 @@
                       <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
                       <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
                     </svg>
-                    Sign in with Google
+                    Continue with Google
                   </button>
                 </div>
                 <div class="setting-row">
@@ -380,7 +372,7 @@
                 <div class="setting-row">
                   <div class="setting-info">
                     <span class="setting-label">Authentication</span>
-                    <span class="setting-description">Fix issues with AI features or sync</span>
+                    <span class="setting-description">Fix issues with premium tools or sync</span>
                   </div>
                   <button class="btn btn-secondary" id="fixAuthBtn">Fix Auth</button>
                 </div>
