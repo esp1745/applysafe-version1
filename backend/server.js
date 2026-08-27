@@ -9,9 +9,28 @@ const Anthropic = require('@anthropic-ai/sdk');
 const sequelize = require('./database');
 const User = require('./models/User');
 const UserData = require('./models/UserData');
-const { scoreJobPosting } = require('./ml/predict');
 
 const app = express();
+
+let scoreJobPosting = null;
+let mlLoadAttempted = false;
+
+function getScoreJobPosting() {
+  if (scoreJobPosting || mlLoadAttempted) {
+    return scoreJobPosting;
+  }
+
+  mlLoadAttempted = true;
+
+  try {
+    ({ scoreJobPosting } = require('./ml/predict'));
+  } catch (error) {
+    console.warn('ML classifier unavailable, continuing without ONNX scoring:', error.message);
+    scoreJobPosting = null;
+  }
+
+  return scoreJobPosting;
+}
 
 app.use(cors());
 app.use(express.json());
@@ -253,9 +272,14 @@ app.post('/api/analyze-job', async (req, res) => {
     let mlScore = null;
     if (jobData && !prompt) {
       try {
-        const result = await scoreJobPosting(jobData);
-        mlScore = result.probability;
-        console.log('ML classifier score:', mlScore.toFixed(4));
+        const scoreJobPostingFn = getScoreJobPosting();
+        if (scoreJobPostingFn) {
+          const result = await scoreJobPostingFn(jobData);
+          mlScore = result.probability;
+          console.log('ML classifier score:', mlScore.toFixed(4));
+        } else {
+          console.log('ML classifier not available, skipping ONNX score');
+        }
       } catch (mlError) {
         console.error('ML scoring failed (continuing with Claude only):', mlError.message);
       }
