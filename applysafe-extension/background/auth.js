@@ -12,7 +12,7 @@ const AUTH_CONFIG = {
   SCOPE_LIST: Array.isArray(MANIFEST_OAUTH.scopes) && MANIFEST_OAUTH.scopes.length
     ? MANIFEST_OAUTH.scopes
     : ['profile', 'email'],
-  API_ENDPOINT: 'https://applysafe-version1.vercel.app/api'
+  API_ENDPOINT: 'https://esp1745-applysafe-version1.vercel.app/api'
 };
 
 // Helper to check if a token looks like a JWT (has 3 parts separated by dots)

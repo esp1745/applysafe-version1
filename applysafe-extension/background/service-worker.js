@@ -36,8 +36,8 @@ try {
 
 // Configuration
 const CONFIG = {
-  BACKEND_URL: 'https://applysafe-version1.vercel.app',
-  API_ENDPOINT: 'https://applysafe-version1.vercel.app/api/analyze-job',
+  BACKEND_URL: 'https://esp1745-applysafe-version1.vercel.app',
+  API_ENDPOINT: 'https://esp1745-applysafe-version1.vercel.app/api/analyze-job',
   MODEL: 'claude-haiku-4-5-20251001', // Fast and cost-effective for this use case
   MAX_TOKENS: 1024,
   CACHE_DURATION: 3600000, // 1 hour in ms

@@ -6,7 +6,7 @@ const SUBSCRIPTION_CONFIG = {
   STRIPE_PUBLISHABLE_KEY: 'pk_test_51RUCeWRvKQf7z4L6KtiAvtMRYom6zjz81RrqTvTTnV9XMBV8v06JaSLcAZHncPTraoBXxcsgbBMDtSaN4MOfEF17001zcNcgWr',
   TRIAL_DAYS: 7,
   DAILY_SCAN_LIMIT_FREE: 10, // Free trial: 10 scans per day
-  API_ENDPOINT: 'https://applysafe-version1.vercel.app/api',
+  API_ENDPOINT: 'https://esp1745-applysafe-version1.vercel.app/api',
   PRICE_ID: 'price_1SeNEXRvKQf7z4L6T9GroSYi'
   
   // To get test credentials:

@@ -457,8 +457,8 @@ app.post('/api/create-checkout', async (req, res) => {
           quantity: 1,
         },
       ],
-      success_url: `https://applysafe-version1.vercel.app/api/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `https://applysafe-version1.vercel.app/api/cancel`,
+      success_url: `https://esp1745-applysafe-version1.vercel.app/api/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `https://esp1745-applysafe-version1.vercel.app/api/cancel`,
       client_reference_id: clientReferenceId,
       subscription_data: {
         trial_period_days: 7, // 7-day free trial
@@ -1312,8 +1312,8 @@ app.post('/api/user/upgrade', authenticateToken, async (req, res) => {
         price: process.env.STRIPE_PRICE_ID,
         quantity: 1,
       }],
-      success_url: `https://applysafe-version1.vercel.app/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `https://applysafe-version1.vercel.app/cancel`,
+      success_url: `https://esp1745-applysafe-version1.vercel.app/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `https://esp1745-applysafe-version1.vercel.app/cancel`,
       client_reference_id: userId,
       customer_email: user.email,
       metadata: {
