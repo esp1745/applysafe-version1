@@ -165,6 +165,38 @@ const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
 
+const JOB_REVIEW_RESPONSE_FORMAT = {
+  type: 'json_schema',
+  name: 'job_scam_review',
+  strict: true,
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: [
+      'riskScore',
+      'jobTitle',
+      'company',
+      'redFlags',
+      'positiveIndicators',
+      'explanation'
+    ],
+    properties: {
+      riskScore: { type: 'number' },
+      jobTitle: { type: 'string' },
+      company: { type: 'string' },
+      redFlags: {
+        type: 'array',
+        items: { type: 'string' }
+      },
+      positiveIndicators: {
+        type: 'array',
+        items: { type: 'string' }
+      },
+      explanation: { type: 'string' }
+    }
+  }
+};
+
 function extractResponseText(response) {
   if (typeof response?.output_text === 'string' && response.output_text.trim()) {
     return response.output_text;
@@ -187,7 +219,7 @@ function extractResponseText(response) {
   return textChunks.join('\n').trim();
 }
 
-async function createAiTextResponse(input, maxOutputTokens = 1024) {
+async function createAiTextResponse(input, maxOutputTokens = 1024, responseFormat = { type: 'text' }) {
   if (!openai) {
     throw new Error('OpenAI client is not configured');
   }
@@ -197,11 +229,35 @@ async function createAiTextResponse(input, maxOutputTokens = 1024) {
     input,
     max_output_tokens: maxOutputTokens,
     text: {
-      format: {
-        type: 'text'
-      }
+      format: responseFormat
     }
   });
+}
+
+function parseJobReviewResponse(responseText, jobData) {
+  const analysis = JSON.parse(responseText);
+  const isStringList = value => Array.isArray(value) && value.every(item => typeof item === 'string');
+
+  if (!Number.isFinite(analysis?.riskScore)
+    || typeof analysis?.jobTitle !== 'string'
+    || typeof analysis?.company !== 'string'
+    || !isStringList(analysis?.redFlags)
+    || !isStringList(analysis?.positiveIndicators)
+    || typeof analysis?.explanation !== 'string') {
+    throw new Error('OpenAI response did not match the job review schema');
+  }
+
+  return {
+    riskScore: Math.max(0, Math.min(100, Math.round(analysis.riskScore))),
+    jobTitle: analysis.jobTitle.trim() || jobData?.title || 'Unknown',
+    company: analysis.company.trim() || jobData?.company || 'Unknown',
+    redFlags: analysis.redFlags.map(item => item.trim()).filter(Boolean).slice(0, 5),
+    positiveIndicators: analysis.positiveIndicators.map(item => item.trim()).filter(Boolean).slice(0, 5),
+    explanation: analysis.explanation.trim(),
+    timestamp: Date.now(),
+    aiAnalyzed: true,
+    provider: 'openai'
+  };
 }
 
 // Connect to Postgres (Supabase)
@@ -328,42 +384,15 @@ app.post('/api/analyze-job', async (req, res) => {
 
     const response = await createAiTextResponse(
       prompt || buildAnalysisPrompt(jobData, mlScore),
-      1024
+      1024,
+      JOB_REVIEW_RESPONSE_FORMAT
     );
     
     const responseText = extractResponseText(response);
     
     console.log('AI analysis completed successfully');
     
-    // Parse the JSON response from the model
-    let analysis;
-    try {
-      // Extract JSON from the response in case the model wraps it in prose.
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        analysis = JSON.parse(jsonMatch[0]);
-        // Add timestamp
-        analysis.timestamp = Date.now();
-        analysis.aiAnalyzed = true;
-        analysis.provider = 'openai';
-      } else {
-        throw new Error('No JSON found in response');
-      }
-    } catch (parseError) {
-      console.error('Failed to parse AI response:', parseError.message);
-      // Return a basic structure if parsing fails
-      analysis = {
-        riskScore: 30,
-        jobTitle: jobData.title || 'Unknown',
-        company: jobData.company || 'Unknown',
-        redFlags: ['Unable to fully analyze posting'],
-        positiveIndicators: [],
-        explanation: responseText.substring(0, 200),
-        timestamp: Date.now(),
-        aiAnalyzed: false,
-        provider: 'openai'
-      };
-    }
+    const analysis = parseJobReviewResponse(responseText, jobData);
     
     res.json({
       success: true,
