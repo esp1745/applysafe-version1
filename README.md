@@ -28,9 +28,9 @@ A Chrome extension that helps job seekers spot fraudulent job postings before th
 
 If you see `redirect_uri_mismatch`, the Google OAuth client usually belongs to a different extension ID than the one currently loaded in Chrome. The redirect for this build should resolve to `https://flfknohnjagnocbkeedkokpllmlmomlp.chromiumapp.org/`.
 
-### Claude API (optional)
+### OpenAI API (optional)
 
-Get a key from [console.anthropic.com](https://console.anthropic.com/) and enter it in the extension settings. Without it, heuristic detection is used.
+Set `OPENAI_API_KEY` for the backend and optionally `OPENAI_MODEL` if you want to override the default `gpt-5-mini`. Without it, heuristic detection is used.
 
 ### Backend
 
@@ -45,6 +45,13 @@ Requires PostgreSQL. For Supabase, use the Transaction pooler connection string 
 `postgresql://postgres.[project-ref]:[url-encoded-password]@aws-[region].pooler.supabase.com:6543/postgres`
 
 If you get `Tenant or user not found`, re-copy the exact pooler URI from Supabase Dashboard > Connect, keep the username in the form `postgres.[project-ref]`, and URL-encode any special characters in the password.
+
+Backend AI environment variables:
+
+```env
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-5-mini
+```
 
 ## Project Structure
 
@@ -65,6 +72,6 @@ website/               # Marketing site
 
 | Score | Meaning |
 |-------|---------|
-| 0–30  | Appears safe |
-| 31–60 | Proceed with caution |
+| 0–25  | Appears safe |
+| 26–60 | Proceed with caution |
 | 61–100 | High risk — likely a scam |

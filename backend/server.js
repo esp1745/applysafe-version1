@@ -5,7 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
-const Anthropic = require('@anthropic-ai/sdk');
+const OpenAI = require('openai');
 const sequelize = require('./database');
 const User = require('./models/User');
 const UserData = require('./models/UserData');
@@ -159,10 +159,50 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 // Google OAuth client
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-// Anthropic Claude client (API key stored securely in environment)
-const anthropic = process.env.ANTHROPIC_API_KEY 
-  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+// OpenAI client (API key stored securely in environment)
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
+
+function extractResponseText(response) {
+  if (typeof response?.output_text === 'string' && response.output_text.trim()) {
+    return response.output_text;
+  }
+
+  const textChunks = [];
+
+  for (const item of response?.output || []) {
+    if (item.type !== 'message' || !Array.isArray(item.content)) {
+      continue;
+    }
+
+    for (const content of item.content) {
+      if (content.type === 'output_text' && typeof content.text === 'string') {
+        textChunks.push(content.text);
+      }
+    }
+  }
+
+  return textChunks.join('\n').trim();
+}
+
+async function createAiTextResponse(input, maxOutputTokens = 1024) {
+  if (!openai) {
+    throw new Error('OpenAI client is not configured');
+  }
+
+  return openai.responses.create({
+    model: OPENAI_MODEL,
+    input,
+    max_output_tokens: maxOutputTokens,
+    text: {
+      format: {
+        type: 'text'
+      }
+    }
+  });
+}
 
 // Connect to Postgres (Supabase)
 let dbReady = false;
@@ -230,23 +270,24 @@ app.get('/api/health', async (req, res) => {
     timestamp: new Date().toISOString(),
     postgres: dbReady ? 'connected' : 'disconnected',
     connectionError: connectionError,
-    anthropic: !!anthropic,
+    openai: !!openai,
+    aiModel: OPENAI_MODEL,
     stripe: !!process.env.STRIPE_SECRET_KEY
   });
 });
 
 // =====================================
-// CLAUDE AI ANALYSIS PROXY ENDPOINT
+// AI ANALYSIS PROXY ENDPOINT
 // =====================================
 
-// Analyze job posting using Claude AI
+// Analyze job posting using OpenAI
 app.post('/api/analyze-job', async (req, res) => {
   try {
     const { jobData, prompt } = req.body;
     
-    // Check if Anthropic is configured
-    if (!anthropic) {
-      console.log('Anthropic API not configured, returning fallback');
+    // Check if OpenAI is configured
+    if (!openai) {
+      console.log('OpenAI API not configured, returning fallback');
       return res.status(503).json({ 
         error: 'AI analysis not available',
         fallback: true,
@@ -264,7 +305,7 @@ app.post('/api/analyze-job', async (req, res) => {
     
     console.log('Processing AI analysis request for:', jobData?.title || 'custom prompt');
 
-    // Score with our custom-trained classifier as an extra signal for Claude.
+    // Score with our custom-trained classifier as an extra signal for the LLM.
     // Not used as a standalone verdict - it false-positives on the short,
     // sparsely-scraped postings the extension typically produces, since it
     // was trained on a richer schema (company_profile, requirements, etc.)
@@ -281,35 +322,30 @@ app.post('/api/analyze-job', async (req, res) => {
           console.log('ML classifier not available, skipping ONNX score');
         }
       } catch (mlError) {
-        console.error('ML scoring failed (continuing with Claude only):', mlError.message);
+        console.error('ML scoring failed (continuing with LLM only):', mlError.message);
       }
     }
 
-    // Call Claude API
-    const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
-      messages: [{
-        role: 'user',
-        content: prompt || buildAnalysisPrompt(jobData, mlScore)
-      }]
-    });
+    const response = await createAiTextResponse(
+      prompt || buildAnalysisPrompt(jobData, mlScore),
+      1024
+    );
     
-    // Extract response
-    const responseText = message.content[0].text;
+    const responseText = extractResponseText(response);
     
     console.log('AI analysis completed successfully');
     
-    // Parse the JSON response from Claude
+    // Parse the JSON response from the model
     let analysis;
     try {
-      // Extract JSON from the response (Claude might include extra text)
+      // Extract JSON from the response in case the model wraps it in prose.
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         analysis = JSON.parse(jsonMatch[0]);
         // Add timestamp
         analysis.timestamp = Date.now();
         analysis.aiAnalyzed = true;
+        analysis.provider = 'openai';
       } else {
         throw new Error('No JSON found in response');
       }
@@ -324,7 +360,8 @@ app.post('/api/analyze-job', async (req, res) => {
         positiveIndicators: [],
         explanation: responseText.substring(0, 200),
         timestamp: Date.now(),
-        aiAnalyzed: false
+        aiAnalyzed: false,
+        provider: 'openai'
       };
     }
     
@@ -333,15 +370,15 @@ app.post('/api/analyze-job', async (req, res) => {
       analysis: analysis,
       mlScore: mlScore,
       usage: {
-        input_tokens: message.usage?.input_tokens,
-        output_tokens: message.usage?.output_tokens
+        input_tokens: response.usage?.input_tokens,
+        output_tokens: response.usage?.output_tokens
       }
     });
     
   } catch (error) {
     console.error('AI analysis error:', error.message);
     
-    // Handle specific Anthropic errors
+    // Handle provider-specific authentication/rate-limit errors
     if (error.status === 429) {
       return res.status(429).json({ error: 'Rate limit exceeded', fallback: true });
     }
@@ -429,9 +466,10 @@ Most legitimate postings from known companies should score 5-25. Reserve 30+ for
 // Health check endpoint for AI service
 app.get('/api/ai-status', (req, res) => {
   res.json({
-    aiEnabled: !!anthropic,
-    model: 'claude-haiku-4-5-20251001',
-    status: anthropic ? 'ready' : 'not configured'
+    aiEnabled: !!openai,
+    provider: 'openai',
+    model: OPENAI_MODEL,
+    status: openai ? 'ready' : 'not configured'
   });
 });
 
@@ -1578,7 +1616,7 @@ app.post('/api/v3/generate-cover-letter', verifyUser, async (req, res) => {
     const { jobDescription, skills, userSkills, tone, jobTitle, company } = req.body;
     const candidateSkills = skills || userSkills || '';
     
-    if (!anthropic) {
+    if (!openai) {
       return res.status(503).json({ error: 'AI service not available' });
     }
     
@@ -1630,15 +1668,11 @@ Write a 3-4 paragraph cover letter that:
 Do NOT use generic phrases like "I am writing to express my interest" or "I am a hard worker".
 Make it specific, compelling, and tailored to the job.`;
 
-    const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1500,
-      messages: [{ role: 'user', content: prompt }]
-    });
+    const response = await createAiTextResponse(prompt, 1500);
     
     res.json({
       success: true,
-      coverLetter: message.content[0].text
+      coverLetter: extractResponseText(response)
     });
   } catch (error) {
     console.error('Cover letter error:', error);
@@ -1651,7 +1685,7 @@ app.post('/api/v3/analyze-resume', verifyUser, async (req, res) => {
   try {
     const { resumeText, jobDescription } = req.body;
     
-    if (!anthropic) {
+    if (!openai) {
       return res.status(503).json({ error: 'AI service not available' });
     }
     
@@ -1695,23 +1729,20 @@ Provide a detailed analysis in this exact JSON format:
   "experienceAlignment": "Brief assessment of how experience aligns with requirements"
 }`;
 
-    const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1500,
-      messages: [{ role: 'user', content: prompt }]
-    });
+    const response = await createAiTextResponse(prompt, 1500);
+    const responseText = extractResponseText(response);
     
     let analysis;
     try {
-      const jsonMatch = message.content[0].text.match(/\{[\s\S]*\}/);
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       analysis = JSON.parse(jsonMatch[0]);
     } catch {
       analysis = { 
         score: 70, 
-        raw: message.content[0].text,
+        raw: responseText,
         matchingSkills: [],
         missingSkills: [],
-        recommendations: message.content[0].text
+        recommendations: responseText
       };
     }
     
@@ -1728,7 +1759,7 @@ app.post('/api/v3/interview-prep', verifyUser, async (req, res) => {
     // Support both jobDescription and jobTitle/company params
     const { jobDescription, jobTitle, company, industry } = req.body;
     
-    if (!anthropic) {
+    if (!openai) {
       return res.status(503).json({ error: 'AI service not available' });
     }
     
@@ -1775,18 +1806,15 @@ Format as JSON:
   "questionsToAsk": ["Question to ask 1?", "Question to ask 2?", "Question to ask 3?"]
 }`;
 
-    const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1500,
-      messages: [{ role: 'user', content: prompt }]
-    });
+    const response = await createAiTextResponse(prompt, 1500);
+    const responseText = extractResponseText(response);
     
     let prep;
     try {
-      const jsonMatch = message.content[0].text.match(/\{[\s\S]*\}/);
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       prep = JSON.parse(jsonMatch[0]);
     } catch {
-      prep = { raw: message.content[0].text };
+      prep = { raw: responseText };
     }
     
     // Return in both formats for compatibility
@@ -1802,7 +1830,7 @@ app.post('/api/v3/chat', verifyUser, async (req, res) => {
   try {
     const { message, context } = req.body;
     
-    if (!anthropic) {
+    if (!openai) {
       return res.status(503).json({ error: 'AI service not available' });
     }
     
@@ -1831,15 +1859,11 @@ User question: ${message}
 
 Provide a helpful, actionable response.`;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 500,
-      messages: [{ role: 'user', content: prompt }]
-    });
+    const response = await createAiTextResponse(prompt, 500);
     
     res.json({
       success: true,
-      reply: response.content[0].text
+      reply: extractResponseText(response)
     });
   } catch (error) {
     console.error('Chat error:', error);

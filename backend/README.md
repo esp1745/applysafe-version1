@@ -1,18 +1,20 @@
-# ApplySafe Backend - Stripe Subscription Server
+# ApplySafe Backend - Stripe, Auth, and AI Server
 
-Simple Node.js backend for handling Stripe subscriptions.
+Node.js backend for Stripe subscriptions, Google auth, Supabase data, and OpenAI-powered review features.
 
 ## Setup
 
 1. **Install dependencies:**
 ```bash
-npm install express stripe cors dotenv
+npm install
 ```
 
 2. **Create `.env` file:**
 ```env
 STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key
 STRIPE_PRICE_ID=price_your_stripe_price_id
+OPENAI_API_KEY=sk-proj_your_openai_api_key
+OPENAI_MODEL=gpt-5-mini
 PORT=3000
 ```
 
