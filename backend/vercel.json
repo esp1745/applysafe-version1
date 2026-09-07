@@ -6,11 +6,6 @@
       "destination": "/api"
     }
   ],
-  "functions": {
-    "api/index.js": {
-      "excludeFiles": "node_modules/onnxruntime-node/bin/napi-v3/{darwin,win32}/**"
-    }
-  },
   "env": {
     "NODE_ENV": "production"
   }
