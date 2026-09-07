@@ -384,7 +384,7 @@ app.post('/api/analyze-job', async (req, res) => {
 
     const response = await createAiTextResponse(
       prompt || buildAnalysisPrompt(jobData, mlScore),
-      1024,
+      2048,
       JOB_REVIEW_RESPONSE_FORMAT
     );
     
