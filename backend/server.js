@@ -141,9 +141,72 @@ app.get('/', (req, res) => {
           <div class="links">
             <a href="/api/health">Health status <span>/api/health</span></a>
             <a href="/api/ai-status">AI status <span>/api/ai-status</span></a>
+            <a href="/privacy">Privacy policy <span>/privacy</span></a>
             <a href="/success">Checkout success page <span>/success</span></a>
             <a href="/cancel">Checkout cancel page <span>/cancel</span></a>
           </div>
+        </main>
+      </body>
+    </html>
+  `);
+});
+
+app.get('/privacy', (req, res) => {
+  res.type('html').send(`
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>ApplySafe Privacy Policy</title>
+        <style>
+          :root { color-scheme: light; --ink: #10224f; --muted: #526381; --line: #dbe6f5; --accent: #0fcdb3; }
+          * { box-sizing: border-box; }
+          body { margin: 0; background: #f4f8ff; color: var(--ink); font: 16px/1.65 Georgia, serif; }
+          main { width: min(800px, calc(100% - 40px)); margin: 56px auto; padding: 42px; background: #fff; border: 1px solid var(--line); border-radius: 20px; box-shadow: 0 18px 50px rgba(15, 47, 120, 0.1); }
+          .eyebrow { margin: 0; color: #087f71; font: 700 12px/1.2 system-ui, sans-serif; letter-spacing: 0.1em; text-transform: uppercase; }
+          h1, h2 { font-family: system-ui, sans-serif; line-height: 1.2; }
+          h1 { margin: 12px 0 8px; font-size: clamp(32px, 7vw, 48px); }
+          h2 { margin: 36px 0 8px; font-size: 22px; }
+          p, li { color: var(--muted); }
+          a { color: #0b6f99; }
+          .notice { margin-top: 28px; padding: 18px; border-left: 4px solid var(--accent); background: #effcf9; color: #254a5f; }
+          @media (max-width: 600px) { main { width: min(100% - 24px, 800px); margin: 12px auto; padding: 26px; } }
+        </style>
+      </head>
+      <body>
+        <main>
+          <p class="eyebrow">ApplySafe</p>
+          <h1>Privacy Policy</h1>
+          <p>Effective date: September 7, 2026</p>
+          <p>ApplySafe helps users review job listings for scam signals. This policy explains the data the ApplySafe Chrome extension handles and why.</p>
+
+          <h2>Data We Handle</h2>
+          <ul>
+            <li><strong>Account data:</strong> name, email address, profile image, and account identifiers provided when a user signs in with Google or email.</li>
+            <li><strong>Authentication data:</strong> OAuth access tokens and session tokens used only to authenticate the user and keep their session active.</li>
+            <li><strong>Job-listing data:</strong> the URL, title, employer, location, compensation text, description, and contact details visible in a supported job post.</li>
+            <li><strong>Product data:</strong> scam-review results, saved scan history, reminders, application-tracking details, preferences, and reports a user chooses to create.</li>
+            <li><strong>Payment data:</strong> paid subscriptions are processed by Stripe. ApplySafe does not collect or store card numbers.</li>
+          </ul>
+
+          <h2>How We Use Data</h2>
+          <p>We use this data only to provide ApplySafe features: reviewing the open job listing, presenting risk and trust signals, verifying sponsorship-related employer information, maintaining account access, saving user-selected history and reminders, and processing optional subscriptions.</p>
+
+          <h2>Service Providers</h2>
+          <p>To provide these features, data may be transmitted over HTTPS to ApplySafe's hosting and database providers, OpenAI for job-review generation, Google for sign-in, Stripe for payment processing, and public H-1B data sources for employer checks. We do not sell user data or use it for advertising, creditworthiness, or lending decisions.</p>
+
+          <h2>Storage and Retention</h2>
+          <p>Review caches, preferences, and history may be stored locally in the browser. Signed-in account information and synced data may be stored in ApplySafe's database to provide account and history features. Users can clear local extension data in the dashboard or request account-data deletion by contacting us.</p>
+
+          <h2>Security</h2>
+          <p>ApplySafe uses HTTPS for data transmitted between the extension and its services. Access tokens and session data are used only for authentication and are not shared for advertising or unrelated purposes.</p>
+
+          <h2>Google API Limited Use</h2>
+          <p class="notice">The use of information received from Google APIs will adhere to the Chrome Web Store User Data Policy, including the Limited Use requirements.</p>
+
+          <h2>Contact</h2>
+          <p>For privacy questions or account-data deletion requests, contact <a href="mailto:esparance7@gmail.com">esparance7@gmail.com</a>.</p>
         </main>
       </body>
     </html>
